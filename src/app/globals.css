@@ -1,26 +1,188 @@
-@import "tailwindcss";
-
+/* ====== Tokens mínimos (claro/escuro) ====== */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --gcs-bg: #ffffff;
+  --gcs-fg: #111827;
+  --gcs-fg-muted: #6b7280;
+  --gcs-blue: #2563eb;
+  --gcs-border-color: #e5e7eb;
+  --gcs-input-bg: #ffffff;
+  --gcs-input-fg: #111827;
+  --gcs-input-border: #d1d5db;
+  --gcs-input-placeholder: #9ca3af;
+  --gcs-backdrop: rgba(0,0,0,.6);
+
+  --gcs-btn-gray-bg: #f3f4f6;
+  --gcs-btn-gray-fg: #111827;
+  --gcs-btn-gray-border: #d1d5db;
+
+  --gcs-btn-green-bg: #16a34a;
+  --gcs-btn-green-fg: #ffffff;
+  --gcs-btn-green-border: #16a34a;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Tokens padrão (claro) */
+:root {
+  --gcs-bg: #ffffff;
+  --gcs-fg: #111827;
+  --gcs-fg-muted: #6b7280;
+  --gcs-blue: #2563eb;
+  --gcs-border-color: #e5e7eb;
+  --gcs-input-bg: #ffffff;
+  --gcs-input-fg: #111827;
+  --gcs-input-border: #d1d5db;
+  --gcs-input-placeholder: #9ca3af;
+  --gcs-backdrop: rgba(0,0,0,.6);
+
+  --gcs-btn-gray-bg: #f3f4f6;
+  --gcs-btn-gray-fg: #111827;
+  --gcs-btn-gray-border: #d1d5db;
+
+  --gcs-btn-green-bg: #16a34a;
+  --gcs-btn-green-fg: #ffffff;
+  --gcs-btn-green-border: #16a34a;
+
+  /* header do modal no claro */
+  --gcs-modal-header-bg: #f1f5fb;
+  --gcs-modal-title: #0f172a;
 }
 
+/* OVERRIDES só quando <html class="dark"> */
+html.dark {
+  --gcs-bg: #111827;
+  --gcs-fg: #e5e7eb;
+  --gcs-fg-muted: #9ca3af;
+  --gcs-blue: #3b82f6;
+  --gcs-border-color: #374151;
+  --gcs-input-bg: #1f2937;
+  --gcs-input-fg: #e5e7eb;
+  --gcs-input-border: #4b5563;
+  --gcs-input-placeholder: #9ca3af;
+  --gcs-backdrop: rgba(0,0,0,.7);
+
+  --gcs-btn-gray-bg: #374151;
+  --gcs-btn-gray-fg: #e5e7eb;
+  --gcs-btn-gray-border: #4b5563;
+
+  --gcs-btn-green-bg: #16a34a;
+  --gcs-btn-green-fg: #ffffff;
+  --gcs-btn-green-border: #16a34a;
+
+  /* header do modal no escuro */
+  --gcs-modal-header-bg: #0f172a;
+  --gcs-modal-title: #e5e7eb;
+}
+
+
+/* ====== Tipografia base ====== */
+body {
+  color: var(--gcs-fg);
+  background: transparent;
+}
+
+/* ====== Labels ====== */
+.modal-label {
+  color: var(--gcs-fg-muted);
+  font-weight: 600;
+  font-size: 0.875rem;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+/* ====== Inputs do modal ====== */
+.modal-input {
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  background: var(--gcs-input-bg);
+  color: var(--gcs-input-fg);
+  border: 1px solid var(--gcs-input-border);
+  border-radius: 0.5rem;
+  outline: none;
+}
+
+.modal-input::placeholder {
+  color: var(--gcs-input-placeholder);
+}
+
+.modal-input:focus {
+  border-color: var(--gcs-blue);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+/* ====== Botões ====== */
+.btn {
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+
+.btn[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn.btn-gray {
+  background: var(--gcs-btn-gray-bg);
+  color: var(--gcs-btn-gray-fg);
+  border-color: var(--gcs-btn-gray-border);
+}
+
+.btn.btn-gray:hover:not([disabled]) {
+  filter: brightness(1.05);
+}
+
+.btn.btn-green {
+  background: var(--gcs-btn-green-bg);
+  color: var(--gcs-btn-green-fg);
+  border-color: var(--gcs-btn-green-border);
+}
+
+.btn.btn-green:hover:not([disabled]) {
+  filter: brightness(1.05);
+}
+
+/* ====== Header arrastável ====== */
+#modal-header {
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* Cores do header do modal */
+:root {
+  --gcs-modal-header-bg: #f1f5fb;   /* claro */
+  --gcs-modal-title: #2563eb;       /* claro */
+}
+
+/* Se usar prefers-color-scheme */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --gcs-modal-header-bg: #0f172a; /* slate-900 aprox */
+    --gcs-modal-title: #e5e7eb;     /* texto claro */
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Se seu app aplica classe .dark (Tailwind) */
+.dark {
+  --gcs-modal-header-bg: #0f172a;
+  --gcs-modal-title: #e5e7eb;
+}
+
+/* Estilos */
+.modal-header {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--gcs-border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: move;
+  background-color: var(--gcs-modal-header-bg);
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
+.modal-title {
+  margin: 0;
+  color: var(--gcs-modal-title);
+  font-weight: 700;       /* ajuste aqui se quiser */
+  font-size: 1.1rem;      /* ajuste aqui se quiser */
 }
