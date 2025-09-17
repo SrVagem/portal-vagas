@@ -1,5 +1,7 @@
 "use client";
-import "./globals.css";
+
+import "antd/dist/reset.css";       // <- AntD v5
+import "./globals.css";             // <- Tailwind e seus globais
 import { ThemeModeProvider } from "@/providers/theme-provider";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
