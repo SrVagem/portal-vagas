@@ -1,14 +1,13 @@
-"use client";
-
-import "antd/dist/reset.css";       // <- AntD v5
-import "./globals.css";             // <- Tailwind e seus globais
-import { ThemeModeProvider } from "@/providers/theme-provider";
+// src/app/layout.tsx
+import "antd/dist/reset.css";
+import "./globals.css";
+import ThemeProviderClient from "@/components/theme-provider-client";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
       <body className="min-h-screen bg-neutral-950 text-neutral-50 antialiased">
-        <ThemeModeProvider>{children}</ThemeModeProvider>
+        <ThemeProviderClient>{children}</ThemeProviderClient>
       </body>
     </html>
   );
