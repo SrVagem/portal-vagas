@@ -1,295 +1,321 @@
+// src/app/vagas/page.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { TableProps } from "antd";
 import {
-  App as AntdApp,
-  Button,
-  Card,
-  Input,
-  Popconfirm,
-  Row,
-  Col,
-  Space,
   Table,
   Tag,
-  Tooltip,
-  theme,
+  Button,
+  Space,
+  Input,
+  Select,
+  Popconfirm,
+  App as AntdApp,
 } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { Plus, Pencil, Trash2, RefreshCcw, Search } from "lucide-react";
-import dayjs from "dayjs";
-import ClientLayout from "@/components/client-layout";
-import {
-  fetchVagas,
-  createVaga,
-  updateVaga,
-  inativaVaga,
-  Vaga,
-  StatusVaga,
-  STATUS_OPTIONS,
-} from "@/lib/vagas-api";
+import { ReloadOutlined, PlusOutlined } from "@ant-design/icons";
+import type { Vaga, StatusVaga } from "@/lib/vagas-api";
+import { consultaVagas, inativaVaga, incluiVaga, alteraVaga } from "@/lib/vagas-api";
+import VagaModal from "@/components/vaga-modal";
 
-/* Resizable headers */
-import { Resizable } from "react-resizable";
-import "react-resizable/css/styles.css";
-
-/* Modal separado (clean) */
-import VagaModal, { VagaFormValues } from "@/components/vaga-modal";
-
-/* Helpers */
-function statusTag(status: StatusVaga) {
-  const found = STATUS_OPTIONS.find((s) => s.value === status);
-  return <Tag color={found?.color}>{found?.label ?? status}</Tag>;
-}
-const fmtMoney = (v?: number | null) =>
-  v == null ? "" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
-const fmtDate = (iso?: string | null) =>
-  !iso ? "" : dayjs(iso).isValid() ? dayjs(iso).format("DD/MM/YYYY HH:mm") : String(iso);
-
-/* Resizable cell */
-type ResizableTitleProps = React.ThHTMLAttributes<HTMLTableCellElement> & {
-  onResize?: (e: any, data: { size: { width: number; height: number } }) => void;
-  width?: number;
-};
-const ResizableTitle: React.FC<ResizableTitleProps> = ({ onResize, width, children, ...rest }) => {
-  if (!width) return <th {...rest}>{children}</th>;
-  return (
-    <Resizable
-      width={width}
-      height={0}
-      onResize={onResize as any}
-      draggableOpts={{ enableUserSelectHack: false }}
-      handle={
-        <span
-          className="react-resizable-handle"
-          onClick={(e) => e.stopPropagation()}
-          style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 8, cursor: "col-resize" }}
-        />
-      }
-    >
-      <th {...rest} style={{ position: "relative" }}>
-        {children}
-      </th>
-    </Resizable>
-  );
+type StatusOption = {
+  label: string;
+  value: StatusVaga | "";
 };
 
-export default function PageVagas() {
-  const { message } = AntdApp.useApp();
-  const { token } = theme.useToken();
+type ModalMode = "create" | "edit";
 
-  const [loading, setLoading] = useState(false);
+type ModalState =
+  | { open: false; mode?: undefined; initial?: undefined }
+  | { open: true; mode: ModalMode; initial?: Partial<Vaga> };
+
+export default function VagasPage() {
+  const { message } = AntdApp.useApp?.() ?? {
+    message: { success: (_: string) => {}, error: (_: string) => {} },
+  };
+
+  // -----------------------------
+  // State
+  // -----------------------------
   const [data, setData] = useState<Vaga[]>([]);
-  const [search, setSearch] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<Vaga | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [busca, setBusca] = useState<string>("");
+  const [status, setStatus] = useState<StatusVaga | "">("");
+  const [inativandoId, setInativandoId] = useState<number | null>(null);
 
-  const [colWidths, setColWidths] = useState<Record<string, number>>({
-    id: 90,
-    nome: 260,
-    status: 120,
-    responsavel: 200,
-    local_trabalho: 260,
-    tipo_contrato: 150,
-    salario: 130,
-    data_abertura: 170,
-    data_fechamento: 170,
-    descricao: 300,
-    requisitos: 300,
-    beneficios: 260, // <- sem acento (evita chave errada)
-    actions: 168,
-  });
+  const [modal, setModal] = useState<ModalState>({ open: false });
 
-  const filtered = useMemo(() => {
-    const s = search.trim().toLowerCase();
-    if (!s) return data;
-    return data.filter((v) =>
-      [
-        String(v.id),
-        v.nome,
-        v.status,
-        v.descricao ?? "",
-        v.requisitos ?? "",
-        v.local_trabalho ?? "",
-        v.tipo_contrato ?? "",
-        v.beneficios ?? "",
-        v.responsavel ?? "",
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(s)
-    );
-  }, [data, search]);
+  // -----------------------------
+  // Options
+  // -----------------------------
+  const statusOptions: StatusOption[] = useMemo(
+    () => [
+      { label: "Todos", value: "" },
+      { label: "ABERTA", value: "ABERTA" },
+      { label: "FECHADA", value: "FECHADA" },
+      { label: "INATIVA", value: "INATIVA" },
+    ],
+    []
+  );
 
-  async function load() {
+  // -----------------------------
+  // Load
+  // -----------------------------
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const items = await fetchVagas();
-      setData(items);
-    } catch (e: any) {
-      message.error(e?.message ?? "Erro ao carregar vagas");
+      const vagas = await consultaVagas({
+        busca: busca.trim() || undefined,
+        status: status || undefined,
+      });
+      setData(vagas);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Falha ao carregar vagas";
+      console.error(err);
+      message.error?.(msg);
     } finally {
       setLoading(false);
     }
-  }
-  useEffect(() => { load(); }, []);
+  }, [busca, status, message]);
 
-  function handleOpenCreate() { setEditing(null); setModalOpen(true); }
-  function handleOpenEdit(record: Vaga) { setEditing(record); setModalOpen(true); }
+  useEffect(() => {
+    // carrega ao montar e quando filtros mudarem
+    load();
+  }, [load]);
 
-  async function handleSubmit(values: VagaFormValues) {
-    try {
-      if (editing) {
-        const updated = await updateVaga(editing.id, {
-          nome: values.nome, status: values.status, descricao: values.descricao, requisitos: values.requisitos,
-          local_trabalho: values.local_trabalho, tipo_contrato: values.tipo_contrato, salario: values.salario,
-          beneficios: values.beneficios, responsavel: values.responsavel,
-          data_fechamento: values.data_fechamento?.toISOString(),
-        });
-        setData((prev) => prev.map((v) => (v.id === updated.id ? updated : v)));
-        message.success("Vaga atualizada");
-      } else {
-        const created = await createVaga({
-          nome: values.nome, status: values.status, descricao: values.descricao, requisitos: values.requisitos,
-          local_trabalho: values.local_trabalho, tipo_contrato: values.tipo_contrato, salario: values.salario,
-          beneficios: values.beneficios, responsavel: values.responsavel,
-          data_fechamento: values.data_fechamento?.toISOString(),
-        });
-        setData((prev) => [created, ...prev]);
-        message.success("Vaga criada");
+  // -----------------------------
+  // Actions: tabela e filtros
+  // -----------------------------
+  const handleInativar = useCallback(
+    async (id: number) => {
+      setInativandoId(id);
+      try {
+        const updated = await inativaVaga({ id, status: "INATIVA" });
+        setData((prev) => prev.map((v) => (v.id === id ? updated : v)));
+        message.success?.("Vaga inativada com sucesso.");
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : "Não foi possível inativar a vaga.";
+        console.error(err);
+        message.error?.(msg);
+      } finally {
+        setInativandoId(null);
       }
-      setModalOpen(false);
-      setEditing(null);
-    } catch (e: any) {
-      message.error(e?.message ?? "Erro ao salvar");
-    }
-  }
-
-  async function onInativar(record: Vaga) {
-    try {
-      const result = await inativaVaga(record.id);
-      if (result === "ok") {
-        setData((prev) => prev.map((v) => (v.id === record.id ? { ...v, status: "INATIVA" } : v)));
-      } else {
-        setData((prev) => prev.map((v) => (v.id === record.id ? result : v)));
-      }
-      message.success("Vaga inativada");
-    } catch (e: any) {
-      message.error(e?.message ?? "Erro ao inativar");
-    }
-  }
-
-  const ellipsisCell = (key: keyof Vaga) => (_: any, record: Vaga) => ({
-    title: record[key] == null ? "" : String(record[key] as any),
-  });
-
-  const columnsBase: ColumnsType<Vaga> = [
-    { title: "ID", dataIndex: "id", key: "id", width: colWidths.id, sorter: (a, b) => a.id - b.id },
-    { title: "Título", dataIndex: "nome", key: "nome", width: colWidths.nome, ellipsis: true, onCell: ellipsisCell("nome") },
-    {
-      title: "Status", dataIndex: "status", key: "status", width: colWidths.status,
-      render: (_: any, r) => statusTag(r.status),
-      filters: STATUS_OPTIONS.map((s) => ({ text: s.label, value: s.value })),
-      onFilter: (v: any, r) => r.status === v,
     },
-    { title: "Responsável", dataIndex: "responsavel", key: "responsavel", width: colWidths.responsavel, ellipsis: true, onCell: ellipsisCell("responsavel") },
-    { title: "Local", dataIndex: "local_trabalho", key: "local_trabalho", width: colWidths.local_trabalho, ellipsis: true, onCell: ellipsisCell("local_trabalho") },
-    { title: "Contrato", dataIndex: "tipo_contrato", key: "tipo_contrato", width: colWidths.tipo_contrato, onCell: ellipsisCell("tipo_contrato") },
-    { title: "Salário", dataIndex: "salario", key: "salario", width: colWidths.salario, render: (v: number) => fmtMoney(v) },
-    { title: "Abertura", dataIndex: "data_abertura", key: "data_abertura", width: colWidths.data_abertura, render: fmtDate },
-    { title: "Fechamento", dataIndex: "data_fechamento", key: "data_fechamento", width: colWidths.data_fechamento, render: fmtDate },
-    { title: "Descrição", dataIndex: "descricao", key: "descricao", width: colWidths.descricao, ellipsis: true, onCell: ellipsisCell("descricao") },
-    { title: "Requisitos", dataIndex: "requisitos", key: "requisitos", width: colWidths.requisitos, ellipsis: true, onCell: ellipsisCell("requisitos") },
-    { title: "Benefícios", dataIndex: "beneficios", key: "beneficios", width: colWidths.beneficios, ellipsis: true, onCell: ellipsisCell("beneficios") },
-    {
-      title: "Ações",
-      key: "actions",
-      fixed: "right",
-      width: colWidths.actions,
-      render: (_: any, record) => (
-        <Space>
-          <Tooltip title="Editar">
-            <Button size="small" onClick={() => handleOpenEdit(record)} icon={<Pencil size={16} />} />
-          </Tooltip>
-          <Popconfirm
-            title="Inativar vaga?"
-            description={`Você tem certeza que deseja inativar "${record.nome}"?`}
-            okText="Sim"
-            cancelText="Não"
-            onConfirm={() => onInativar(record)}
-          >
-            <Button danger size="small" icon={<Trash2 size={16} />} />
-          </Popconfirm>
-        </Space>
-      ),
+    [message]
+  );
+
+  const handleResetFiltros = useCallback(() => {
+    setBusca("");
+    setStatus("");
+  }, []);
+
+  // -----------------------------
+  // Actions: modal (criar/editar)
+  // -----------------------------
+  const openCriar = useCallback(() => {
+    setModal({ open: true, mode: "create" });
+  }, []);
+
+  const openEditar = useCallback((vaga: Vaga) => {
+    setModal({ open: true, mode: "edit", initial: vaga });
+  }, []);
+
+  const closeModal = useCallback(() => {
+    setModal({ open: false });
+  }, []);
+
+  const submitCriar = useCallback(
+    async (values: Partial<Vaga>) => {
+      // garante nome obrigatório
+      const nome = values.nome?.trim();
+      if (!nome) throw new Error("Título da vaga é obrigatório.");
+
+      const nova = await incluiVaga({
+        nome,
+        status: values.status ?? "ABERTA",
+        descricao: values.descricao,
+        requisitos: values.requisitos,
+        local_trabalho: values.local_trabalho,
+        modalidade: values.modalidade,
+        salario: values.salario,
+        beneficios: values.beneficios,
+        responsavel: values.responsavel,
+        data_fechamento: values.data_fechamento,
+      });
+
+      // insere no topo
+      setData((prev) => [nova, ...prev]);
+      message.success?.("Vaga criada com sucesso.");
     },
-  ];
+    [message]
+  );
 
-  const columns: ColumnsType<Vaga> = columnsBase.map((col) => {
-    const key = String(col.key);
-    if (!col.width) return col;
-    return {
-      ...col,
-      onHeaderCell: (column: any) => ({
-        width: column.width,
-        onResize: (_: any, { size }: any) =>
-          setColWidths((prev) => ({ ...prev, [key]: Math.max(80, Math.min(size.width, 900)) })),
-      }),
-    } as any;
-  });
+  const submitEditar = useCallback(
+    async (values: Partial<Vaga>) => {
+      const id = typeof modal.initial?.id === "number" ? modal.initial.id : undefined;
+      if (!id) throw new Error("ID da vaga não encontrado para edição.");
 
+      const atualizada = await alteraVaga({
+        id,
+        nome: values.nome ?? modal.initial?.nome ?? "",
+        status: values.status ?? (modal.initial?.status as StatusVaga),
+        descricao: values.descricao ?? modal.initial?.descricao,
+        requisitos: values.requisitos ?? modal.initial?.requisitos,
+        local_trabalho: values.local_trabalho ?? modal.initial?.local_trabalho,
+        modalidade: values.modalidade ?? modal.initial?.modalidade,
+        salario: values.salario ?? modal.initial?.salario,
+        beneficios: values.beneficios ?? modal.initial?.beneficios,
+        responsavel: values.responsavel ?? modal.initial?.responsavel,
+        data_fechamento: values.data_fechamento ?? modal.initial?.data_fechamento,
+      });
+
+      setData((prev) => prev.map((v) => (v.id === id ? atualizada : v)));
+      message.success?.("Vaga atualizada com sucesso.");
+    },
+    [modal.initial, message]
+  );
+
+  // -----------------------------
+  // Table columns
+  // -----------------------------
+  const columns: TableProps<Vaga>["columns"] = useMemo(
+    () => [
+      {
+        title: "ID",
+        dataIndex: "id",
+        key: "id",
+        width: 80,
+        sorter: (a, b) => a.id - b.id,
+        defaultSortOrder: "ascend",
+      },
+      {
+        title: "Título",
+        dataIndex: "nome",
+        key: "nome",
+        ellipsis: true,
+      },
+      {
+        title: "Status",
+        dataIndex: "status",
+        key: "status",
+        width: 120,
+        filters: [
+          { text: "ABERTA", value: "ABERTA" },
+          { text: "FECHADA", value: "FECHADA" },
+          { text: "INATIVA", value: "INATIVA" },
+        ],
+        onFilter: (value, record) => record.status === value,
+        render: (value: Vaga["status"]) => {
+          const color =
+            value === "ABERTA" ? "green" : value === "FECHADA" ? "gold" : value === "INATIVA" ? "red" : "blue";
+          return <Tag color={color}>{value}</Tag>;
+        },
+      },
+      {
+        title: "Local",
+        dataIndex: "local_trabalho",
+        key: "local_trabalho",
+        ellipsis: true,
+      },
+      {
+        title: "Modalidade",
+        dataIndex: "modalidade",
+        key: "modalidade",
+        width: 140,
+      },
+      {
+        title: "Salário",
+        dataIndex: "salario",
+        key: "salario",
+        width: 120,
+        render: (v?: number) =>
+          typeof v === "number"
+            ? v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+            : "-",
+        sorter: (a, b) => (a.salario ?? 0) - (b.salario ?? 0),
+      },
+      {
+        title: "Ações",
+        key: "actions",
+        fixed: "right",
+        width: 240,
+        render: (_: unknown, record: Vaga) => (
+          <Space>
+            <Button size="small" onClick={() => openEditar(record)}>
+              Editar
+            </Button>
+            <Popconfirm
+              title="Confirmar inativação"
+              description={`Inativar a vaga #${record.id}?`}
+              okText="Inativar"
+              cancelText="Cancelar"
+              onConfirm={() => handleInativar(record.id)}
+            >
+              <Button size="small" danger loading={inativandoId === record.id}>
+                Inativar
+              </Button>
+            </Popconfirm>
+          </Space>
+        ),
+      },
+    ],
+    [handleInativar, inativandoId, openEditar]
+  );
+
+  // -----------------------------
+  // Render
+  // -----------------------------
   return (
-    <ClientLayout title="Vagas de Emprego">
-      <div className="p-4 grid gap-4">
-        {/* Toolbar */}
-        <Card className="shadow-lg rounded-2xl">
-          <Row gutter={12} align="middle" wrap={false}>
-            <Col flex="auto">
-              <Input
-                allowClear
-                prefix={<Search size={16} />}
-                placeholder="Buscar em qualquer coluna..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </Col>
-            <Col>
-              <Space wrap>
-                <Button icon={<RefreshCcw size={16} />} onClick={load} loading={loading}>
-                  Recarregar
-                </Button>
-                <Button type="primary" icon={<Plus size={16} />} onClick={handleOpenCreate}>
-                  Nova Vaga
-                </Button>
-              </Space>
-            </Col>
-          </Row>
-        </Card>
-
-        {/* Tabela */}
-        <Card className="shadow-lg rounded-2xl">
-          <Table
-            rowKey="id"
-            size="small"
-            loading={loading}
-            columns={columns as any}
-            dataSource={filtered}
-            sticky
-            scroll={{ x: Object.values(colWidths).reduce((a, b) => a + b, 0) + 200, y: 520 }}
-            pagination={{ pageSize: 10, showSizeChanger: false }}
-            components={{ header: { cell: ResizableTitle as any } }}
+    <div className="mx-auto w-full max-w-6xl p-4 space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl font-semibold">Vagas</h1>
+        <Space wrap>
+          <Input
+            allowClear
+            placeholder="Buscar por título, requisitos..."
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            onPressEnter={load}
+            style={{ width: 260 }}
           />
-        </Card>
+          <Select
+            options={statusOptions}
+            value={status}
+            onChange={(v) => setStatus(v as StatusOption["value"])}
+            style={{ width: 150 }}
+          />
+          <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
+            Recarregar
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCriar}>
+            Criar vaga
+          </Button>
+          <Button onClick={handleResetFiltros} disabled={!busca && !status}>
+            Limpar filtros
+          </Button>
+        </Space>
       </div>
 
-      {/* Modal (clean) */}
-      <VagaModal
-        open={modalOpen}
-        title={editing ? "Editar Vaga" : "Nova Vaga"}
-        initialValues={editing ?? { status: "ABERTA" } as Partial<Vaga>}
-        onCancel={() => setModalOpen(false)}
-        onSubmit={handleSubmit}
+      <Table<Vaga>
+        rowKey={(r) => r.id}
+        loading={loading}
+        dataSource={data}
+        columns={columns}
+        pagination={{ pageSize: 10, showSizeChanger: true }}
+        scroll={{ x: 900 }}
+        bordered
       />
-    </ClientLayout>
+
+      {modal.open && (
+        <VagaModal
+          open={modal.open}
+          mode={modal.mode}
+          initial={modal.initial}
+          onClose={closeModal}
+          onSubmit={modal.mode === "create" ? submitCriar : submitEditar}
+        />
+      )}
+    </div>
   );
 }

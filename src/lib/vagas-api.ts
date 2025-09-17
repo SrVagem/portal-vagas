@@ -1,116 +1,222 @@
-// src/lib/vagas-api.ts
-export type StatusVaga = "ABERTA" | "FECHADA" | "INATIVA" | string;
+// -------------------------------
+// Tipos base
+// -------------------------------
+export type StatusVaga = "ABERTA" | "FECHADA" | "INATIVA" | (string & {});
 
 export interface Vaga {
-  id: number;                 // ← id_vaga
-  nome: string;               // ← titulo
-  status: StatusVaga;         // ← status
+  id: number;
+  nome: string; // título da vaga
+  status: StatusVaga;
 
-  // extras visíveis na UI
-  descricao?: string | null;
-  requisitos?: string | null;
-  local_trabalho?: string | null;
-  tipo_contrato?: string | null;
-  salario?: number | null;
-  beneficios?: string | null;
-  data_abertura?: string | null;    // ISO
-  data_fechamento?: string | null;  // ISO
-  responsavel?: string | null;
+  descricao?: string;
+  requisitos?: string;
+  local_trabalho?: string;
+  modalidade?: string; // presencial/híbrido/remoto
+  salario?: number;
+  beneficios?: string;
+  responsavel?: string;
+  data_fechamento?: string | Date; // ISO (yyyy-mm-dd) ou Date
 }
 
-export const STATUS_OPTIONS = [
-  { label: "Aberta", value: "ABERTA", color: "green" },
-  { label: "Fechada", value: "FECHADA", color: "red" },
-  { label: "Inativa", value: "INATIVA", color: "default" },
-] as const;
+// Filtros de consulta (ajuste conforme precisar na sua UI)
+export interface VagaFiltro {
+  busca?: string;
+  status?: StatusVaga;
+}
 
-function toUI(row: any): Vaga {
+// Payload “esperado” pelo webhook (ajuste nomes se seu n8n usa outros)
+type N8nVagaPayload = {
+  id?: number | string;
+  titulo?: string;
+  status?: StatusVaga;
+  descricao?: string;
+  requisitos?: string;
+  local_trabalho?: string;
+  modalidade?: string;
+  salario?: number;
+  beneficios?: string;
+  responsavel?: string;
+  data_fechamento?: string; // sempre string ISO no backend
+};
+
+// -------------------------------
+// Helpers
+// -------------------------------
+
+class HttpError extends Error {
+  status: number;
+  body: string | undefined;
+  constructor(message: string, status: number, body?: string) {
+    super(message);
+    this.name = "HttpError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+async function fetchJSON<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const res = await fetch(input, init);
+  const text = await res.text();
+  if (!res.ok) {
+    throw new HttpError(`Request failed: ${res.status}`, res.status, text);
+  }
+  try {
+    return text ? (JSON.parse(text) as T) : ({} as T);
+  } catch {
+    // Se backend retornar texto vazio ou inválido
+    return {} as T;
+  }
+}
+
+function toNumberOrUndefined(v: unknown): number | undefined {
+  if (v === null || v === undefined || v === "") return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function toStringOrEmpty(v: unknown): string {
+  return v == null ? "" : String(v);
+}
+
+function toIsoDateOnly(d: unknown): string | undefined {
+  if (!d) return undefined;
+  if (typeof d === "string") {
+    // assume já vem ISO ou "yyyy-mm-dd"
+    return d.slice(0, 10);
+  }
+  if (d instanceof Date) {
+    return d.toISOString().slice(0, 10);
+  }
+  return undefined;
+}
+
+/**
+ * Converte o objeto vindo do backend (n8n) para o shape da UI (Vaga).
+ * Aceita várias possibilidades de nomes de campos.
+ */
+function toUI(it: unknown): Vaga {
+  const o = (it ?? {}) as Record<string, unknown>;
+
+  const idRaw = o.id ?? o.id_vaga ?? o.codigo ?? o.codigo_vaga;
+  const tituloRaw = o.titulo ?? o.nome ?? o.nome_vaga;
+
   return {
-    id: Number(row.id_vaga),
-    nome: String(row.titulo ?? ""),
-    status: String(row.status ?? "ABERTA"),
-    descricao: row.descricao ?? null,
-    requisitos: row.requisitos ?? null,
-    local_trabalho: row.local_trabalho ?? null,
-    tipo_contrato: row.tipo_contrato ?? null,
-    salario: typeof row.salario === "number" ? row.salario : (row.salario ? Number(row.salario) : null),
-    beneficios: row.beneficios ?? null,
-    data_abertura: row.data_abertura ?? null,
-    data_fechamento: row.data_fechamento ?? null,
-    responsavel: row.responsavel ?? null,
+    id: Number(idRaw ?? 0),
+    nome: toStringOrEmpty(tituloRaw),
+    status: toStringOrEmpty(o.status) as StatusVaga,
+
+    descricao: o.descricao as string | undefined,
+    requisitos: o.requisitos as string | undefined,
+    local_trabalho: (o.local_trabalho ?? o.local ?? o.cidade) as string | undefined,
+    modalidade: (o.modalidade ?? o.tipo ?? o.formato) as string | undefined,
+    salario: toNumberOrUndefined(o.salario),
+    beneficios: o.beneficios as string | undefined,
+    responsavel: (o.responsavel ?? o.contato) as string | undefined,
+    data_fechamento:
+      typeof o.data_fechamento === "string"
+        ? o.data_fechamento
+        : o.data_fechamento instanceof Date
+        ? o.data_fechamento
+        : undefined,
   };
 }
 
-// CONSULTA (POST sem params)
-export async function fetchVagas(): Promise<Vaga[]> {
-  const res = await fetch("/api/vagas/consulta", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    cache: "no-store",
-    body: JSON.stringify({}),
-  });
-  if (!res.ok) throw new Error(`Erro na consulta de vagas: ${res.status} - ${await res.text()}`);
-  const data = await res.json();
-  const arr = Array.isArray(data) ? data : data?.data ?? [];
-  return arr.map(toUI);
-}
-
-// INCLUI
-export async function createVaga(input: Partial<Vaga> & { nome: string; status?: StatusVaga }): Promise<Vaga> {
-  const payload: any = {
+/**
+ * Converte do modelo da UI para o payload do backend (n8n).
+ * Ajuste as chaves se seu workflow espera nomes diferentes.
+ */
+function toBackend(input: Partial<Vaga>): N8nVagaPayload {
+  return {
+    id: input.id,
     titulo: input.nome,
-    status: input.status ?? "ABERTA",
+    status: input.status,
     descricao: input.descricao,
     requisitos: input.requisitos,
     local_trabalho: input.local_trabalho,
-    tipo_contrato: input.tipo_contrato,
+    modalidade: input.modalidade,
     salario: input.salario,
     beneficios: input.beneficios,
     responsavel: input.responsavel,
-    data_fechamento: input.data_fechamento, // string ISO opcional
+    data_fechamento: toIsoDateOnly(input.data_fechamento),
+  };
+}
+
+// -------------------------------
+// API pública
+// -------------------------------
+
+/**
+ * Lista/consulta vagas.
+ * Se o seu backend exigir filtros por query/body, adapte aqui.
+ */
+export async function consultaVagas(filtro?: VagaFiltro): Promise<Vaga[]> {
+  // Se precisar enviar filtros, troque para POST com body JSON.
+  // Aqui vou de POST para ser mais flexível:
+  const body: Record<string, unknown> = {};
+  if (filtro?.busca) body.busca = filtro.busca;
+  if (filtro?.status) body.status = filtro.status;
+
+  const data = await fetchJSON<unknown[]>("/api/vagas/consulta", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    // keepalive ajuda um pouco quando chamado em navegação
+    keepalive: true,
+  });
+
+  return Array.isArray(data) ? data.map(toUI) : [];
+}
+
+/**
+ * Inclui uma vaga.
+ * `nome` é obrigatório; demais campos opcionais.
+ */
+export async function incluiVaga(input: Partial<Vaga> & { nome: string; status?: StatusVaga }): Promise<Vaga> {
+  const payload = toBackend({ status: "ABERTA", ...input });
+
+  const data = await fetchJSON<unknown>("/api/vagas/inclui", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    keepalive: true,
+  });
+
+  return toUI(data);
+}
+
+/**
+ * Altera/atualiza uma vaga existente.
+ * `id` é obrigatório.
+ */
+export async function alteraVaga(input: Partial<Vaga> & { id: number }): Promise<Vaga> {
+  const payload = toBackend(input);
+
+  const data = await fetchJSON<unknown>("/api/vagas/altera", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    keepalive: true,
+  });
+
+  return toUI(data);
+}
+
+/**
+ * Inativa (ou fecha) uma vaga existente.
+ * `id` é obrigatório. Você pode passar `status` se quiser “FECHADA” vs “INATIVA”.
+ */
+export async function inativaVaga(params: { id: number; status?: Extract<StatusVaga, "INATIVA" | "FECHADA"> }): Promise<Vaga> {
+  const payload: N8nVagaPayload = {
+    id: params.id,
+    status: params.status ?? "INATIVA",
   };
 
-  const res = await fetch("/api/vagas/inclui", {
+  const data = await fetchJSON<unknown>("/api/vagas/inativa", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    keepalive: true,
   });
-  if (!res.ok) throw new Error(`Erro ao incluir: ${res.status} - ${await res.text()}`);
-  return toUI(await res.json());
-}
 
-// ALTERA
-export async function updateVaga(id: number, changes: Partial<Vaga>): Promise<Vaga> {
-  const payload: any = { id_vaga: id };
-  if (changes.nome !== undefined) payload.titulo = changes.nome;
-  if (changes.status !== undefined) payload.status = changes.status;
-  if (changes.descricao !== undefined) payload.descricao = changes.descricao;
-  if (changes.requisitos !== undefined) payload.requisitos = changes.requisitos;
-  if (changes.local_trabalho !== undefined) payload.local_trabalho = changes.local_trabalho;
-  if (changes.tipo_contrato !== undefined) payload.tipo_contrato = changes.tipo_contrato;
-  if (changes.salario !== undefined) payload.salario = changes.salario;
-  if (changes.beneficios !== undefined) payload.beneficios = changes.beneficios;
-  if (changes.responsavel !== undefined) payload.responsavel = changes.responsavel;
-  if (changes.data_fechamento !== undefined) payload.data_fechamento = changes.data_fechamento;
-
-  const res = await fetch("/api/vagas/altera", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(`Erro ao alterar: ${res.status} - ${await res.text()}`);
-  return toUI(await res.json());
-}
-
-// INATIVA
-export async function inativaVaga(id: number): Promise<"ok" | Vaga> {
-  const res = await fetch("/api/vagas/inativa", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id_vaga: id }),
-  });
-  if (!res.ok) throw new Error(`Erro ao inativar: ${res.status} - ${await res.text()}`);
-  const data = await res.json();
-  if (data?.status === "ok") return "ok";
   return toUI(data);
 }

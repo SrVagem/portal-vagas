@@ -16,7 +16,8 @@ export async function POST(req: Request) {
       status: r.status,
       headers: { 'content-type': 'application/json' },
     });
-  } catch (err: any) {
-    return new Response(JSON.stringify({ error: err?.message ?? 'Erro desconhecido' }), { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Erro desconhecido';
+    return new Response(JSON.stringify({ error: message }), { status: 500 });
   }
 }

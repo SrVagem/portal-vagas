@@ -1,16 +1,25 @@
+// src/components/vaga-modal.tsx
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { X as XIcon, Save, Ban } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Modal, Input, InputNumber, Select, Button, Space, Typography, Divider } from "antd";
+import type { SelectProps } from "antd";
 import type { Vaga, StatusVaga } from "@/lib/vagas-api";
-import { STATUS_OPTIONS } from "@/lib/vagas-api";
 
-const MODAL_WIDTH = 900;
-const PADDING = 16;
-const OFFSET_Y = -60;
+type Mode = "create" | "edit";
 
-export type VagaFormValues = {
-  id?: number;
+export interface VagaModalProps {
+  open: boolean;
+  mode: Mode;
+  initial?: Partial<Vaga>;
+  onClose: () => void;
+  onSubmit: (values: Partial<Vaga>) => Promise<void> | void;
+  confirmText?: string; // opcional: texto do botão de confirmar
+  cancelText?: string;  // opcional: texto do botão de cancelar
+  title?: string;       // opcional: título do modal
+}
+
+type FormState = {
   nome: string;
   status: StatusVaga;
   descricao?: string;
@@ -20,298 +29,297 @@ export type VagaFormValues = {
   salario?: number;
   beneficios?: string;
   responsavel?: string;
-  data_fechamento?: string;
+  data_fechamento?: string; // yyyy-mm-dd
 };
 
-type Props = {
-  open: boolean;
-  title?: string;
-  initialValues?: Partial<Vaga>;
-  onCancel: () => void;
-  onSubmit: (values: VagaFormValues) => Promise<void> | void;
-  isSaving?: boolean;
+const defaultState: FormState = {
+  nome: "",
+  status: "ABERTA",
+  descricao: "",
+  requisitos: "",
+  local_trabalho: "",
+  modalidade: "",
+  salario: undefined,
+  beneficios: "",
+  responsavel: "",
+  data_fechamento: undefined,
 };
 
-const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
+function toFormState(v?: Partial<Vaga>): FormState {
+  if (!v) return defaultState;
+  const iso =
+    typeof v.data_fechamento === "string"
+      ? v.data_fechamento.slice(0, 10)
+      : v.data_fechamento instanceof Date
+      ? v.data_fechamento.toISOString().slice(0, 10)
+      : undefined;
 
-const VagaModal: React.FC<Props> = ({
+  return {
+    nome: v.nome ?? "",
+    status: (v.status ?? "ABERTA") as StatusVaga,
+    descricao: v.descricao ?? "",
+    requisitos: v.requisitos ?? "",
+    local_trabalho: v.local_trabalho ?? "",
+    modalidade: v.modalidade ?? "",
+    salario: typeof v.salario === "number" ? v.salario : undefined,
+    beneficios: v.beneficios ?? "",
+    responsavel: v.responsavel ?? "",
+    data_fechamento: iso,
+  };
+}
+
+export default function VagaModal({
   open,
-  title = "Nova Vaga",
-  initialValues,
-  onCancel,
+  mode,
+  initial,
+  onClose,
   onSubmit,
-  isSaving = false,
-}) => {
-  const modalRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
+  confirmText,
+  cancelText,
+  title,
+}: VagaModalProps) {
+  const [values, setValues] = useState<FormState>(defaultState);
+  const [submitting, setSubmitting] = useState(false);
 
-  const width = useMemo(() => {
-    if (typeof window === "undefined") return MODAL_WIDTH;
-    return Math.min(MODAL_WIDTH, window.innerWidth - PADDING * 2);
-  }, [open]);
-
-  // Centraliza ao abrir
-  useEffect(() => {
-    if (!open) return;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const w = Math.min(MODAL_WIDTH, vw - PADDING * 2);
-    const x = Math.max(PADDING, Math.round((vw - w) / 2));
-    const y = Math.max(PADDING, Math.round((vh - 560) / 2) + OFFSET_Y);
-    setPosition({ x, y });
-  }, [open]);
-
-  // Reposiciona se janela redimensionar
-  useEffect(() => {
-    if (!open) return;
-    const onResize = () => {
-      if (!modalRef.current) return;
-      const rect = modalRef.current.getBoundingClientRect();
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      const maxX = vw - rect.width - PADDING;
-      const maxY = vh - Math.min(rect.height, vh - PADDING * 2) - PADDING;
-      setPosition((p) => ({ x: clamp(p.x, PADDING, maxX), y: clamp(p.y, PADDING, Math.max(PADDING, maxY)) }));
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [open]);
-
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!isDragging || !modalRef.current) return;
-      const rect = modalRef.current.getBoundingClientRect();
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      const maxX = vw - rect.width - PADDING;
-      const maxY = vh - Math.min(rect.height, vh - PADDING * 2) - PADDING;
-      setPosition({
-        x: clamp(e.clientX - offset.x, PADDING, Math.max(PADDING, maxX)),
-        y: clamp(e.clientY - offset.y, PADDING, Math.max(PADDING, maxY)),
-      });
-    },
-    [isDragging, offset]
+  // Opções de status — não dependem de `open` (evita o aviso do eslint)
+  const statusOptions: SelectProps["options"] = useMemo(
+    () => [
+      { label: "ABERTA", value: "ABERTA" as StatusVaga },
+      { label: "FECHADA", value: "FECHADA" as StatusVaga },
+      { label: "INATIVA", value: "INATIVA" as StatusVaga },
+    ],
+    []
   );
 
-  const handleMouseUp = useCallback(() => setIsDragging(false), []);
-
+  // Resetar/Preencher quando abrir ou quando mudar o "initial"
   useEffect(() => {
-    if (!open) return;
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [open, handleMouseMove, handleMouseUp]);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (!modalRef.current) return;
-    const target = e.target as HTMLElement;
-    if (target.id === "modal-header" || target.closest("#modal-header")) {
-      setIsDragging(true);
-      const rect = modalRef.current.getBoundingClientRect();
-      setOffset({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-      e.preventDefault();
+    if (open) {
+      setValues(toFormState(initial));
     }
-  };
+  }, [open, initial]);
 
-  const [formData, setFormData] = useState<VagaFormValues>({
-    id: initialValues?.id,
-    nome: initialValues?.nome ?? "",
-    status: (initialValues?.status as StatusVaga) ?? "ABERTA",
-    descricao: initialValues?.descricao ?? "",
-    requisitos: initialValues?.requisitos ?? "",
-    local_trabalho: initialValues?.local_trabalho ?? "",
-    modalidade: initialValues?.modalidade ?? "",
-    salario: typeof initialValues?.salario === "number" ? initialValues?.salario : undefined,
-    beneficios: initialValues?.beneficios ?? "",
-    responsavel: initialValues?.responsavel ?? "",
-    data_fechamento: initialValues?.data_fechamento ? toISODate(initialValues.data_fechamento as any) : undefined,
-  });
+  const handleChangeText = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const { name, value } = e.target;
+      setValues((prev) => ({ ...prev, [name]: value }));
+    },
+    []
+  );
 
-  useEffect(() => {
-    if (!open) return;
-    setFormData({
-      id: initialValues?.id,
-      nome: initialValues?.nome ?? "",
-      status: (initialValues?.status as StatusVaga) ?? "ABERTA",
-      descricao: initialValues?.descricao ?? "",
-      requisitos: initialValues?.requisitos ?? "",
-      local_trabalho: initialValues?.local_trabalho ?? "",
-      modalidade: initialValues?.modalidade ?? "",
-      salario: typeof initialValues?.salario === "number" ? initialValues?.salario : undefined,
-      beneficios: initialValues?.beneficios ?? "",
-      responsavel: initialValues?.responsavel ?? "",
-      data_fechamento: initialValues?.data_fechamento ? toISODate(initialValues.data_fechamento as any) : undefined,
-    });
-  }, [open, initialValues]);
+  const handleChangeNumber = useCallback((value: number | null) => {
+    setValues((prev) => ({ ...prev, salario: typeof value === "number" ? value : undefined }));
+  }, []);
 
-  const setField = <K extends keyof VagaFormValues>(key: K, value: VagaFormValues[K]) =>
-    setFormData((prev) => ({ ...prev, [key]: value }));
+  const handleChangeStatus = useCallback((value: StatusVaga) => {
+    setValues((prev) => ({ ...prev, status: value }));
+  }, []);
 
-  const onChangeText =
-    (key: keyof VagaFormValues) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      setField(key, e.target.value);
+  const handleChangeDate = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value; // formato yyyy-mm-dd
+    setValues((prev) => ({ ...prev, data_fechamento: v || undefined }));
+  }, []);
 
-  const onChangeSelect =
-    (key: keyof VagaFormValues) => (e: React.ChangeEvent<HTMLSelectElement>) =>
-      setField(key, e.target.value as any);
+  const disabledOk = useMemo(() => {
+    return !values.nome.trim();
+  }, [values.nome]);
 
-  const onChangeNumber = (key: keyof VagaFormValues) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
-    setField(key, raw === "" ? undefined : Number(raw));
-  };
+  const handleOk = useCallback(async () => {
+    if (disabledOk) return;
+    setSubmitting(true);
+    try {
+      const payload: Partial<Vaga> = {
+        ...(mode === "edit" && typeof initial?.id === "number" ? { id: initial.id } : {}),
+        nome: values.nome.trim(),
+        status: values.status,
+        descricao: values.descricao?.trim() || undefined,
+        requisitos: values.requisitos?.trim() || undefined,
+        local_trabalho: values.local_trabalho?.trim() || undefined,
+        modalidade: values.modalidade?.trim() || undefined,
+        salario: values.salario,
+        beneficios: values.beneficios?.trim() || undefined,
+        responsavel: values.responsavel?.trim() || undefined,
+        data_fechamento: values.data_fechamento, // yyyy-mm-dd
+      };
+      await onSubmit(payload);
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
+  }, [disabledOk, initial?.id, mode, onClose, onSubmit, values]);
 
-  const onSubmitClick = async () => { await onSubmit(formData); };
+  const handleCancel = useCallback(() => {
+    onClose();
+  }, [onClose]);
 
-  if (!open) return null;
+  const modalTitle = useMemo(() => {
+    if (title) return title;
+    return mode === "create" ? "Criar vaga" : `Editar vaga${initial?.id ? ` #${initial.id}` : ""}`;
+  }, [mode, initial?.id, title]);
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        onClick={isSaving ? undefined : onCancel}
-        style={{ position: "fixed", inset: 0, height: "100vh", backgroundColor: "var(--gcs-backdrop)", zIndex: 1000 }}
-      />
+    <Modal
+      open={open}
+      title={modalTitle}
+      onOk={handleOk}
+      onCancel={handleCancel}
+      okButtonProps={{ disabled: disabledOk, loading: submitting }}
+      cancelButtonProps={{ disabled: submitting }}
+      okText={confirmText ?? (mode === "create" ? "Criar" : "Salvar")}
+      cancelText={cancelText ?? "Cancelar"}
+      destroyOnClose
+      maskClosable={!submitting}
+      keyboard={!submitting}
+      centered
+    >
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="col-span-1 sm:col-span-2">
+            <label className="block text-sm font-medium mb-1" htmlFor="nome">
+              Título da vaga *
+            </label>
+            <Input
+              id="nome"
+              name="nome"
+              placeholder="Ex.: Desenvolvedor Front-end Pleno"
+              value={values.nome}
+              onChange={handleChangeText}
+              autoFocus
+            />
+          </div>
 
-      {/* Modal */}
-      <div
-        ref={modalRef}
-        onMouseDown={handleMouseDown}
-        style={{
-          position: "fixed",
-          top: position.y,
-          left: position.x,
-          width,
-          backgroundColor: "var(--gcs-bg)",
-          borderRadius: "12px",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
-          zIndex: 1001,
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        {/* Header (arrastável) */}
-        <div
-          id="modal-header"
-          style={{
-            padding: "1rem 1.5rem",
-            borderBottom: "1px solid var(--gcs-border-color)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            cursor: "move",
-            borderTopLeftRadius: "12px",
-            borderTopRightRadius: "12px",
-          }}
-        >
-          <h3 style={{ margin: 0}}>{title}</h3>
-          <button
-            onClick={isSaving ? undefined : onCancel}
-            className="btn btn-gray"
-            style={{ background: "transparent", border: "none", cursor: "pointer", padding: 4 }}
-            aria-label="Fechar"
-          >
-            <XIcon size={18} />
-          </button>
-        </div>
+          <div>
+            <label className="block text-sm font-medium mb-1" htmlFor="status">
+              Status
+            </label>
+            <Select
+              id="status"
+              value={values.status}
+              options={statusOptions}
+              onChange={handleChangeStatus}
+              style={{ width: "100%" }}
+            />
+          </div>
 
-        {/* Body */}
-        <div style={{ padding: "1.5rem", maxHeight: "70vh", overflow: "auto" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem" }}>
-            <div>
-              <label className="modal-label">ID</label>
-              <input className="modal-input" value={formData.id ?? ""} disabled />
-            </div>
+          <div>
+            <label className="block text-sm font-medium mb-1" htmlFor="modalidade">
+              Modalidade
+            </label>
+            <Input
+              id="modalidade"
+              name="modalidade"
+              placeholder="Presencial / Híbrido / Remoto"
+              value={values.modalidade}
+              onChange={handleChangeText}
+            />
+          </div>
 
-            <div>
-              <label className="modal-label">Status *</label>
-              <select className="modal-input" value={formData.status} onChange={onChangeSelect("status")} disabled={isSaving}>
-                {(STATUS_OPTIONS as Array<{ label: string; value: StatusVaga }>).map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="block text-sm font-medium mb-1" htmlFor="local_trabalho">
+              Local de trabalho
+            </label>
+            <Input
+              id="local_trabalho"
+              name="local_trabalho"
+              placeholder="Ex.: Brasília - DF"
+              value={values.local_trabalho}
+              onChange={handleChangeText}
+            />
+          </div>
 
-            <div>
-              <label className="modal-label">Responsável</label>
-              <input className="modal-input" value={formData.responsavel ?? ""} onChange={onChangeText("responsavel")} disabled={isSaving} placeholder="Ex: Maria Silva" />
-            </div>
+          <div>
+            <label className="block text-sm font-medium mb-1" htmlFor="salario">
+              Salário
+            </label>
+            <InputNumber
+              id="salario"
+              name="salario"
+              placeholder="Ex.: 5500"
+              value={values.salario}
+              onChange={handleChangeNumber}
+              min={0}
+              step={100}
+              style={{ width: "100%" }}
+            />
+          </div>
 
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label className="modal-label">Nome da Vaga *</label>
-              <input className="modal-input" value={formData.nome} onChange={onChangeText("nome")} disabled={isSaving} placeholder="Ex: Desenvolvedor Front-end" />
-            </div>
+          <div>
+            <label className="block text-sm font-medium mb-1" htmlFor="data_fechamento">
+              Data de fechamento
+            </label>
+            <Input
+              id="data_fechamento"
+              name="data_fechamento"
+              type="date"
+              value={values.data_fechamento ?? ""}
+              onChange={handleChangeDate}
+            />
+          </div>
 
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label className="modal-label">Descrição</label>
-              <textarea className="modal-input" value={formData.descricao ?? ""} onChange={onChangeText("descricao")} disabled={isSaving} placeholder="Resumo da posição, responsabilidades, etc." rows={4} />
-            </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium mb-1" htmlFor="requisitos">
+              Requisitos
+            </label>
+            <Input.TextArea
+              id="requisitos"
+              name="requisitos"
+              placeholder="Tecnologias, experiência, formação..."
+              value={values.requisitos}
+              onChange={handleChangeText}
+              autoSize={{ minRows: 2, maxRows: 6 }}
+            />
+          </div>
 
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label className="modal-label">Requisitos</label>
-              <textarea className="modal-input" value={formData.requisitos ?? ""} onChange={onChangeText("requisitos")} disabled={isSaving} placeholder="Tecnologias, experiência, formação..." rows={3} />
-            </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium mb-1" htmlFor="descricao">
+              Descrição
+            </label>
+            <Input.TextArea
+              id="descricao"
+              name="descricao"
+              placeholder="Fale sobre as responsabilidades e o time..."
+              value={values.descricao}
+              onChange={handleChangeText}
+              autoSize={{ minRows: 3, maxRows: 8 }}
+            />
+          </div>
 
-            <div>
-              <label className="modal-label">Local de Trabalho</label>
-              <input className="modal-input" value={formData.local_trabalho ?? ""} onChange={onChangeText("local_trabalho")} disabled={isSaving} placeholder="Ex: Brasília - DF" />
-            </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium mb-1" htmlFor="beneficios">
+              Benefícios
+            </label>
+            <Input.TextArea
+              id="beneficios"
+              name="beneficios"
+              placeholder="Vale-refeição, plano de saúde, bônus..."
+              value={values.beneficios}
+              onChange={handleChangeText}
+              autoSize={{ minRows: 2, maxRows: 6 }}
+            />
+          </div>
 
-            <div>
-              <label className="modal-label">Modalidade</label>
-              <select className="modal-input" value={formData.modalidade ?? ""} onChange={onChangeSelect("modalidade")} disabled={isSaving}>
-                <option value="">—</option>
-                <option value="Presencial">Presencial</option>
-                <option value="Remoto">Remoto</option>
-                <option value="Híbrido">Híbrido</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="modal-label">Salário (R$)</label>
-              <input className="modal-input" type="number" step="0.01" value={formData.salario ?? ""} onChange={onChangeNumber("salario")} disabled={isSaving} placeholder="Ex: 4500.00" />
-            </div>
-
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label className="modal-label">Benefícios</label>
-              <input className="modal-input" value={formData.beneficios ?? ""} onChange={onChangeText("beneficios")} disabled={isSaving} placeholder="Ex: VT, VR, Plano de Saúde..." />
-            </div>
-
-            <div>
-              <label className="modal-label">Data de Fechamento</label>
-              <input className="modal-input" type="date" value={formData.data_fechamento ?? ""} onChange={(e) => setField("data_fechamento", e.target.value || undefined)} disabled={isSaving} />
-            </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium mb-1" htmlFor="responsavel">
+              Responsável
+            </label>
+            <Input
+              id="responsavel"
+              name="responsavel"
+              placeholder="Nome do responsável pela vaga"
+              value={values.responsavel}
+              onChange={handleChangeText}
+            />
           </div>
         </div>
 
-        {/* Footer */}
-        <div style={{ padding: "1rem 1.5rem", borderTop: "1px solid var(--gcs-border-color)", display: "flex", justifyContent: "flex-end", gap: ".5rem" }}>
-          <button onClick={isSaving ? undefined : onCancel} className="btn btn-gray" style={{ padding: "8px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Ban size={16} /> Cancelar
-          </button>
-          <button onClick={onSubmitClick} disabled={isSaving} className="btn btn-green" style={{ padding: "8px 16px", display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Save size={16} /> {isSaving ? "Salvando..." : "Salvar"}
-          </button>
-        </div>
-      </div>
-    </>
+        <Divider style={{ margin: "8px 0" }} />
+
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          Campos marcados com * são obrigatórios.
+        </Typography.Paragraph>
+      </Space>
+
+      {/* Os botões principais já são controlados pelo Modal (OK/Cancel) */}
+      {/* Se quiser um rodapé customizado, você pode usar `footer` no <Modal />. */}
+    </Modal>
   );
-};
-
-export default VagaModal;
-
-function toISODate(input: string) {
-  try {
-    const d = new Date(input);
-    if (Number.isNaN(d.getTime())) return "";
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  } catch { return ""; }
 }
