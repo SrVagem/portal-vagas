@@ -1,321 +1,256 @@
-// src/app/vagas/page.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { TableProps } from "antd";
+import { useEffect, useMemo, useState } from "react";
 import {
   Table,
-  Tag,
-  Button,
+  Card,
   Space,
   Input,
   Select,
+  Button,
+  App,
+  Tag,
+  Typography,
   Popconfirm,
-  App as AntdApp,
 } from "antd";
-import { ReloadOutlined, PlusOutlined } from "@ant-design/icons";
-import type { Vaga, StatusVaga } from "@/lib/vagas-api";
-import { consultaVagas, inativaVaga, incluiVaga, alteraVaga } from "@/lib/vagas-api";
+import {
+  ReloadOutlined,
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+} from "@ant-design/icons";
+
+import ClientLayout from "@/components/client-layout";
 import VagaModal from "@/components/vaga-modal";
 
-type StatusOption = {
-  label: string;
-  value: StatusVaga | "";
+import {
+  listaVagas,
+  criaVaga,
+  alteraVaga,
+  inativaVaga,
+  type VagaAPI,
+} from "@/lib/vagas-api";
+
+// -------------------- Tipos locais --------------------
+type Vaga = VagaAPI & {
+  id: number | string; // garantir id obrigatório na UI
 };
 
-type ModalMode = "create" | "edit";
+// -------------------- Utils --------------------
+const norm = (s: string) =>
+  s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-type ModalState =
-  | { open: false; mode?: undefined; initial?: undefined }
-  | { open: true; mode: ModalMode; initial?: Partial<Vaga> };
+// Map opcional (caso o JSON do n8n venha com chaves diferentes)
+const mapFromApi = (row: any): Vaga => ({
+  id: row.id ?? row.ID ?? row.codigo ?? crypto.randomUUID(),
+  titulo: row.titulo ?? row.nome ?? row.title ?? "",
+  status:
+    (row.status as Vaga["status"]) ??
+    (row.situacao as Vaga["status"]) ??
+    "ABERTA",
+  responsavel: row.responsavel ?? row.owner ?? "",
+  local: row.local ?? row.cidade ?? "",
+  contrato: row.contrato ?? row.tipo ?? "",
+  salario: row.salario ?? row.valor ?? "",
+  abertura: row.abertura ?? row.dataAbertura ?? "",
+  fechamento: row.fechamento ?? row.dataFechamento ?? "",
+});
 
+// -------------------- Página --------------------
 export default function VagasPage() {
-  const { message } = AntdApp.useApp?.() ?? {
-    message: { success: (_: string) => {}, error: (_: string) => {} },
-  };
+  const { message } = App.useApp();
 
-  // -----------------------------
-  // State
-  // -----------------------------
+  // Dados
   const [data, setData] = useState<Vaga[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [busca, setBusca] = useState<string>("");
-  const [status, setStatus] = useState<StatusVaga | "">("");
-  const [inativandoId, setInativandoId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const [modal, setModal] = useState<ModalState>({ open: false });
+  // Filtros
+  const [busca, setBusca] = useState("");
+  const [status, setStatus] = useState<"todos" | "ABERTA" | "FECHADA">("todos");
 
-  // -----------------------------
-  // Options
-  // -----------------------------
-  const statusOptions: StatusOption[] = useMemo(
-    () => [
-      { label: "Todos", value: "" },
-      { label: "ABERTA", value: "ABERTA" },
-      { label: "FECHADA", value: "FECHADA" },
-      { label: "INATIVA", value: "INATIVA" },
-    ],
-    []
-  );
+  // Modal
+  const [modal, setModal] = useState<{
+    open: boolean;
+    mode: "create" | "edit" | null;
+    initial: Vaga | null;
+  }>({ open: false, mode: null, initial: null });
 
-  // -----------------------------
-  // Load
-  // -----------------------------
-  const load = useCallback(async () => {
-    setLoading(true);
+  // -------- Carregar lista da API --------
+  const load = async () => {
     try {
-      const vagas = await consultaVagas({
-        busca: busca.trim() || undefined,
-        status: status || undefined,
-      });
-      setData(vagas);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Falha ao carregar vagas";
-      console.error(err);
-      message.error?.(msg);
+      setLoading(true);
+      const rows = await listaVagas();
+      // mapeia cada item para o formato da UI
+      setData((rows ?? []).map(mapFromApi));
+    } catch (e: any) {
+      message.error(`Erro ao listar vagas: ${e?.message ?? e}`);
     } finally {
       setLoading(false);
     }
-  }, [busca, status, message]);
+  };
 
   useEffect(() => {
-    // carrega ao montar e quando filtros mudarem
     load();
-  }, [load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // -----------------------------
-  // Actions: tabela e filtros
-  // -----------------------------
-  const handleInativar = useCallback(
-    async (id: number) => {
-      setInativandoId(id);
-      try {
-        const updated = await inativaVaga({ id, status: "INATIVA" });
-        setData((prev) => prev.map((v) => (v.id === id ? updated : v)));
-        message.success?.("Vaga inativada com sucesso.");
-      } catch (err) {
-        const msg =
-          err instanceof Error ? err.message : "Não foi possível inativar a vaga.";
-        console.error(err);
-        message.error?.(msg);
-      } finally {
-        setInativandoId(null);
-      }
+  // -------- Filtro local --------
+  const dataFiltered = useMemo(() => {
+    let out = [...data];
+    if (status !== "todos") out = out.filter((v) => v.status === status);
+    const q = norm(busca.trim());
+    if (q) {
+      out = out.filter((v) =>
+        [
+          v.titulo,
+          v.responsavel ?? "",
+          v.local ?? "",
+          v.contrato ?? "",
+          v.salario ?? "",
+          v.abertura ?? "",
+          v.fechamento ?? "",
+        ].some((c) => norm(String(c)).includes(q))
+      );
+    }
+    return out;
+  }, [data, status, busca]);
+
+  // -------- Ações --------
+  const openCriar = () => setModal({ open: true, mode: "create", initial: null });
+  const openEditar = (record: Vaga) =>
+    setModal({ open: true, mode: "edit", initial: record });
+  const closeModal = () => setModal({ open: false, mode: null, initial: null });
+
+  // -------- Colunas --------
+  const columns = [
+    { title: "ID", dataIndex: "id", key: "id", width: 80 },
+    { title: "Título", dataIndex: "titulo", key: "titulo" },
+    {
+      title: "Status",
+      dataIndex: "status",
+      key: "status",
+      width: 120,
+      render: (s: Vaga["status"]) => (
+        <Tag color={s === "ABERTA" ? "green" : "red"} style={{ borderRadius: 999 }}>
+          {s === "ABERTA" ? "Aberta" : "Fechada"}
+        </Tag>
+      ),
     },
-    [message]
-  );
-
-  const handleResetFiltros = useCallback(() => {
-    setBusca("");
-    setStatus("");
-  }, []);
-
-  // -----------------------------
-  // Actions: modal (criar/editar)
-  // -----------------------------
-  const openCriar = useCallback(() => {
-    setModal({ open: true, mode: "create" });
-  }, []);
-
-  const openEditar = useCallback((vaga: Vaga) => {
-    setModal({ open: true, mode: "edit", initial: vaga });
-  }, []);
-
-  const closeModal = useCallback(() => {
-    setModal({ open: false });
-  }, []);
-
-  const submitCriar = useCallback(
-    async (values: Partial<Vaga>) => {
-      // garante nome obrigatório
-      const nome = values.nome?.trim();
-      if (!nome) throw new Error("Título da vaga é obrigatório.");
-
-      const nova = await incluiVaga({
-        nome,
-        status: values.status ?? "ABERTA",
-        descricao: values.descricao,
-        requisitos: values.requisitos,
-        local_trabalho: values.local_trabalho,
-        modalidade: values.modalidade,
-        salario: values.salario,
-        beneficios: values.beneficios,
-        responsavel: values.responsavel,
-        data_fechamento: values.data_fechamento,
-      });
-
-      // insere no topo
-      setData((prev) => [nova, ...prev]);
-      message.success?.("Vaga criada com sucesso.");
+    { title: "Responsável", dataIndex: "responsavel", key: "responsavel" },
+    { title: "Local", dataIndex: "local", key: "local" },
+    { title: "Contrato", dataIndex: "contrato", key: "contrato", width: 110 },
+    { title: "Salário", dataIndex: "salario", key: "salario", width: 130 },
+    { title: "Abertura", dataIndex: "abertura", key: "abertura", width: 160 },
+    { title: "Fechamento", dataIndex: "fechamento", key: "fechamento", width: 160 },
+    {
+      title: "Ações",
+      key: "acoes",
+      fixed: "right" as const,
+      width: 120,
+      render: (_: any, record: Vaga) => (
+        <Space>
+          <Button icon={<EditOutlined />} onClick={() => openEditar(record)} />
+          <Popconfirm
+            title="Inativar vaga"
+            description={`Confirma inativar a vaga #${record.id}?`}
+            okText="Sim"
+            cancelText="Não"
+            onConfirm={async () => {
+              try {
+                setLoading(true);
+                await inativaVaga({ id: record.id });
+                message.success(`Vaga #${record.id} inativada`);
+                await load();
+              } catch (e: any) {
+                message.error(e?.message ?? "Falha ao inativar");
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            <Button danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
     },
-    [message]
-  );
+  ];
 
-  const submitEditar = useCallback(
-    async (values: Partial<Vaga>) => {
-      const id = typeof modal.initial?.id === "number" ? modal.initial.id : undefined;
-      if (!id) throw new Error("ID da vaga não encontrado para edição.");
-
-      const atualizada = await alteraVaga({
-        id,
-        nome: values.nome ?? modal.initial?.nome ?? "",
-        status: values.status ?? (modal.initial?.status as StatusVaga),
-        descricao: values.descricao ?? modal.initial?.descricao,
-        requisitos: values.requisitos ?? modal.initial?.requisitos,
-        local_trabalho: values.local_trabalho ?? modal.initial?.local_trabalho,
-        modalidade: values.modalidade ?? modal.initial?.modalidade,
-        salario: values.salario ?? modal.initial?.salario,
-        beneficios: values.beneficios ?? modal.initial?.beneficios,
-        responsavel: values.responsavel ?? modal.initial?.responsavel,
-        data_fechamento: values.data_fechamento ?? modal.initial?.data_fechamento,
-      });
-
-      setData((prev) => prev.map((v) => (v.id === id ? atualizada : v)));
-      message.success?.("Vaga atualizada com sucesso.");
-    },
-    [modal.initial, message]
-  );
-
-  // -----------------------------
-  // Table columns
-  // -----------------------------
-  const columns: TableProps<Vaga>["columns"] = useMemo(
-    () => [
-      {
-        title: "ID",
-        dataIndex: "id",
-        key: "id",
-        width: 80,
-        sorter: (a, b) => a.id - b.id,
-        defaultSortOrder: "ascend",
-      },
-      {
-        title: "Título",
-        dataIndex: "nome",
-        key: "nome",
-        ellipsis: true,
-      },
-      {
-        title: "Status",
-        dataIndex: "status",
-        key: "status",
-        width: 120,
-        filters: [
-          { text: "ABERTA", value: "ABERTA" },
-          { text: "FECHADA", value: "FECHADA" },
-          { text: "INATIVA", value: "INATIVA" },
-        ],
-        onFilter: (value, record) => record.status === value,
-        render: (value: Vaga["status"]) => {
-          const color =
-            value === "ABERTA" ? "green" : value === "FECHADA" ? "gold" : value === "INATIVA" ? "red" : "blue";
-          return <Tag color={color}>{value}</Tag>;
-        },
-      },
-      {
-        title: "Local",
-        dataIndex: "local_trabalho",
-        key: "local_trabalho",
-        ellipsis: true,
-      },
-      {
-        title: "Modalidade",
-        dataIndex: "modalidade",
-        key: "modalidade",
-        width: 140,
-      },
-      {
-        title: "Salário",
-        dataIndex: "salario",
-        key: "salario",
-        width: 120,
-        render: (v?: number) =>
-          typeof v === "number"
-            ? v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
-            : "-",
-        sorter: (a, b) => (a.salario ?? 0) - (b.salario ?? 0),
-      },
-      {
-        title: "Ações",
-        key: "actions",
-        fixed: "right",
-        width: 240,
-        render: (_: unknown, record: Vaga) => (
-          <Space>
-            <Button size="small" onClick={() => openEditar(record)}>
-              Editar
-            </Button>
-            <Popconfirm
-              title="Confirmar inativação"
-              description={`Inativar a vaga #${record.id}?`}
-              okText="Inativar"
-              cancelText="Cancelar"
-              onConfirm={() => handleInativar(record.id)}
-            >
-              <Button size="small" danger loading={inativandoId === record.id}>
-                Inativar
-              </Button>
-            </Popconfirm>
-          </Space>
-        ),
-      },
-    ],
-    [handleInativar, inativandoId, openEditar]
-  );
-
-  // -----------------------------
-  // Render
-  // -----------------------------
   return (
-    <div className="mx-auto w-full max-w-6xl p-4 space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold">Vagas</h1>
+    <ClientLayout title="Vagas de Emprego">
+      {/* Filtros */}
+      <Card style={{ marginBottom: 16 }}>
         <Space wrap>
           <Input
             allowClear
-            placeholder="Buscar por título, requisitos..."
+            placeholder="Buscar em qualquer coluna..."
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            onPressEnter={load}
-            style={{ width: 260 }}
+            style={{ width: 360 }}
           />
           <Select
-            options={statusOptions}
             value={status}
-            onChange={(v) => setStatus(v as StatusOption["value"])}
-            style={{ width: 150 }}
+            onChange={(v) => setStatus(v)}
+            style={{ width: 160 }}
+            options={[
+              { value: "todos", label: "Todos" },
+              { value: "ABERTA", label: "Aberta" },
+              { value: "FECHADA", label: "Fechada" },
+            ]}
           />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
             Recarregar
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCriar}>
-            Criar vaga
-          </Button>
-          <Button onClick={handleResetFiltros} disabled={!busca && !status}>
-            Limpar filtros
+            Nova Vaga
           </Button>
         </Space>
-      </div>
+      </Card>
 
-      <Table<Vaga>
-        rowKey={(r) => r.id}
-        loading={loading}
-        dataSource={data}
-        columns={columns}
-        pagination={{ pageSize: 10, showSizeChanger: true }}
-        scroll={{ x: 900 }}
-        bordered
-      />
+      {/* Tabela */}
+      <Card>
+        <Table<Vaga>
+          rowKey="id"
+          columns={columns}
+          dataSource={dataFiltered}
+          loading={loading}
+          pagination={{ pageSize: 10 }}
+          scroll={{ x: 1200 }}
+          size="small" // linhas mais finas
+        />
+        {dataFiltered.length === 0 && !loading && (
+          <Typography.Text type="secondary">
+            Nenhum resultado com os filtros atuais.
+          </Typography.Text>
+        )}
+      </Card>
 
+      {/* Modal de criar/editar */}
       {modal.open && (
         <VagaModal
           open={modal.open}
-          mode={modal.mode}
+          mode={modal.mode!}
           initial={modal.initial}
           onClose={closeModal}
-          onSubmit={modal.mode === "create" ? submitCriar : submitEditar}
+          onSubmit={async (vagaForm) => {
+            try {
+              setLoading(true);
+              if (modal.mode === "create") {
+                await criaVaga(vagaForm as VagaAPI);
+                message.success("Vaga criada!");
+              } else {
+                await alteraVaga(vagaForm as VagaAPI);
+                message.success("Vaga atualizada!");
+              }
+              await load();
+              closeModal();
+            } catch (e: any) {
+              message.error(e?.message ?? "Falha ao salvar vaga");
+            } finally {
+              setLoading(false);
+            }
+          }}
         />
       )}
-    </div>
+    </ClientLayout>
   );
 }

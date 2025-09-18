@@ -67,8 +67,56 @@ export default function ThemeProvider({ mode, children }: ThemeProviderProps) {
   }), [mode]);
 
   return (
-    <ConfigProvider theme={{ algorithm, token }}>
-      <AntdApp>{children}</AntdApp>
-    </ConfigProvider>
+    <ConfigProvider
+  theme={{
+    // usa o algoritmo dark/light conforme seu estado de tema
+    algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+    // ---------- TOKENS GERAIS ----------
+    token: {
+      fontSize: 14,
+      borderRadius: 16,                 // cantos arredondados “do clone”
+      colorBorder: "rgba(255,255,255,0.12)",
+      colorBorderSecondary: "rgba(255,255,255,0.08)",
+      colorBgLayout: isDark ? "#0f0f10" : "#f6f7f8",
+      colorBgContainer: isDark ? "#1b1c1f" : "#ffffff",
+      colorText: isDark ? "rgb(240,240,240)" : "#1f1f1f",
+      controlHeight: 36,
+      controlHeightLG: 40,
+      padding: 12,
+      paddingLG: 16,
+    },
+    // ---------- AJUSTES POR COMPONENTE ----------
+    components: {
+      Card: {
+        borderRadiusLG: 16,
+        colorBorder: "rgba(255,255,255,0.08)",
+        padding: 16,
+      },
+      Table: {
+        borderRadiusLG: 16,
+        headerBg: isDark ? "#242529" : "#f5f6f8",
+        headerColor: isDark ? "rgba(255,255,255,0.85)" : "#1f1f1f",
+        rowHoverBg: isDark ? "#1f2023" : "#fafafa",
+      },
+      Button: {
+        borderRadius: 16,
+      },
+      Modal: {
+        borderRadiusLG: 16,
+      },
+      Input: {
+        borderRadius: 12,
+      },
+      Select: {
+        borderRadius: 12,
+      },
+      Tag: {
+        borderRadiusSM: 999,
+      },
+    },
+  }}
+>
+  {children}
+</ConfigProvider>
   );
 }
