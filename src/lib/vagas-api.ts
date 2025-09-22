@@ -1,5 +1,5 @@
 // src/lib/vagas-api.ts
-// Cliente centralizado para os webhooks do n8n (vagas)
+// Cliente centralizado usando os endpoints internos /api/vagas/*
 
 export type VagaAPI = {
   id?: number | string;
@@ -13,102 +13,89 @@ export type VagaAPI = {
   fechamento?: string;
 };
 
-// =========================
-// Config por VAR de ambiente
-// =========================
-//
-// Por padrão usa seu domínio n8n e os 3 endpoints que você enviou.
-// Para listar, ajusta aqui embaixo (ou via env NEXT_PUBLIC_VAGAS_LIST_PATH).
-//
-const BASE =
-  process.env.NEXT_PUBLIC_VAGAS_BASE?.replace(/\/$/, "") ||
-  "https://n8n.uninova.ai/webhook";
+// ------------------------------------
+// Configuração básica de fetch/handler
+// ------------------------------------
+const DEFAULT_HEADERS: HeadersInit = { "content-type": "application/json" };
 
-const PATH_LIST =
-  process.env.NEXT_PUBLIC_VAGAS_LIST_PATH || "uninova-lista-vagas"; // <- troque se seu listar tiver outro nome
-const PATH_CREATE =
-  process.env.NEXT_PUBLIC_VAGAS_CREATE_PATH || "uninova-insere-vagas";
-const PATH_UPDATE =
-  process.env.NEXT_PUBLIC_VAGAS_UPDATE_PATH || "uninova-altera-vagas";
-const PATH_INACTIVATE =
-  process.env.NEXT_PUBLIC_VAGAS_INACTIVATE_PATH || "uninova-inativa-vagas";
+async function handle<T = any>(res: Response): Promise<T> {
+  const text = await res.text().catch(() => "");
+  if (!res.ok) {
+    console.error("API ERROR", res.status, res.statusText, text);
+    throw new Error(`API ${res.status} ${res.statusText}: ${text || "sem corpo"}`);
+  }
+  try {
+    return (text ? JSON.parse(text) : {}) as T;
+  } catch {
+    // Caso a API retorne texto puro
+    return { raw: text } as unknown as T;
+  }
+}
 
-// Ex.: se quiser apontar cada rota diretamente (sem BASE), defina:
-// NEXT_PUBLIC_VAGAS_LIST_URL, NEXT_PUBLIC_VAGAS_CREATE_URL, etc.
-const URL_LIST =
-  process.env.NEXT_PUBLIC_VAGAS_LIST_URL || `${BASE}/${PATH_LIST}`;
-const URL_CREATE =
-  process.env.NEXT_PUBLIC_VAGAS_CREATE_URL || `${BASE}/${PATH_CREATE}`;
-const URL_UPDATE =
-  process.env.NEXT_PUBLIC_VAGAS_UPDATE_URL || `${BASE}/${PATH_UPDATE}`;
-const URL_INACTIVATE =
-  process.env.NEXT_PUBLIC_VAGAS_INACTIVATE_URL || `${BASE}/${PATH_INACTIVATE}`;
-
-// Se seu n8n exige algum header (ex.: token), configure aqui:
-const DEFAULT_HEADERS: HeadersInit = {
-  "Content-Type": "application/json",
-  // "x-api-key": process.env.NEXT_PUBLIC_VAGAS_TOKEN ?? "",
+// ------------------------------------
+// Helpers de corpo (mapeia p/ n8n)
+// ------------------------------------
+const prune = (o: Record<string, any>) => {
+  Object.keys(o).forEach((k) => o[k] === undefined && delete o[k]);
+  return o;
 };
 
-// Helper padrão
-async function handle<T = any>(res: Response): Promise<T> {
-  if (!res.ok) {
-    // tenta ler JSON, se não der, texto
-    try {
-      const j = await res.json();
-      throw new Error(
-        typeof j === "object" && j && "message" in j ? j.message : JSON.stringify(j)
-      );
-    } catch {
-      const t = await res.text().catch(() => "");
-      throw new Error(t || `HTTP ${res.status}`);
-    }
-  }
-  // alguns webhooks podem não retornar JSON em todas as rotas
-  try {
-    return (await res.json()) as T;
-  } catch {
-    // sem corpo/JSON
-    return undefined as unknown as T;
-  }
-}
-
-// =========================
-// Operações
-// =========================
-export async function listaVagas(): Promise<VagaAPI[]> {
-  const res = await fetch(URL_LIST, {
-    method: "GET",
-    // evitar cache na listagem
-    cache: "no-store",
-    headers: DEFAULT_HEADERS,
+const toBody = (v: Partial<VagaAPI>) =>
+  prune({
+    ...(v.id ? { id_vaga: v.id } : {}),
+    titulo: v.titulo,
+    status: v.status,
+    responsavel: v.responsavel,
+    local: v.local,
+    contrato: v.contrato,
+    salario: v.salario,
+    abertura: v.abertura,
+    fechamento: v.fechamento,
   });
-  return await handle<VagaAPI[]>(res);
-}
 
-export async function criaVaga(payload: VagaAPI) {
-  const res = await fetch(URL_CREATE, {
+// ------------------------------------
+// Operações (todas via /api/vagas/*)
+// ------------------------------------
+
+// ---- CONSULTA (única que pode ir sem params)
+export async function listaVagas() {
+  const res = await fetch("/api/vagas/lista", {
     method: "POST",
     headers: DEFAULT_HEADERS,
-    body: JSON.stringify(payload),
+    body: "{}",
   });
-  return await handle(res);
+  return handle<VagaAPI[]>(res);
 }
 
-export async function alteraVaga(payload: VagaAPI) {
-  const res = await fetch(URL_UPDATE, {
-    method: "POST", // webhooks n8n normalmente aceitam POST para update
-    headers: DEFAULT_HEADERS,
-    body: JSON.stringify(payload),
-  });
-  return await handle(res);
-}
-
-export async function inativaVaga(payload: { id: number | string }) {
-  const res = await fetch(URL_INACTIVATE, {
+// ---- INSERE
+export async function criaVaga(v: VagaAPI) {
+  const res = await fetch("/api/vagas/inclui", {
     method: "POST",
     headers: DEFAULT_HEADERS,
-    body: JSON.stringify(payload),
+    // no create não enviamos id (deixa o backend/n8n definir)
+    body: JSON.stringify(toBody({ ...v, id: undefined })),
   });
-  return await handle(res);
+  return handle(res);
+}
+
+// ---- ALTERA (exige id_vaga + todos os campos)
+export async function alteraVaga(v: VagaAPI) {
+  if (!v?.id) throw new Error("id_vaga é obrigatório para alterar");
+  const res = await fetch("/api/vagas/altera", {
+    method: "POST",
+    headers: DEFAULT_HEADERS,
+    body: JSON.stringify(toBody(v)),
+  });
+  return handle(res);
+}
+
+// ---- INATIVA (apenas id_vaga)
+export async function inativaVaga(id: number | string) {
+  if (!id) throw new Error("id_vaga é obrigatório para inativar");
+  const res = await fetch("/api/vagas/inativa", {
+    method: "POST",
+    headers: DEFAULT_HEADERS,
+    body: JSON.stringify({ id_vaga: id }),
+  });
+  return handle(res);
 }

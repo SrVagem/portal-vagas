@@ -1,20 +1,19 @@
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
+export async function POST() {
   try {
-    const body = await req.json().catch(() => ({}));
-    const upstream = await fetch("https://n8n.uninova.ai/webhook/uninova-inativa-vagas", {
+    const upstream = await fetch("https://n8n.uninova.ai/webhook/uninova-lista-vagas", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(body), // { id_vaga }
+      body: JSON.stringify({}),
     });
     const text = await upstream.text();
-    return new Response(text || "{}", {
+    return new Response(text || "[]", {
       status: upstream.status,
       headers: { "content-type": "application/json" },
     });
   } catch (e: any) {
-    console.error("[API inativa] erro:", e?.message || e);
+    console.error("[API lista] erro:", e?.message || e);
     return new Response(JSON.stringify({ error: e?.message || "Erro desconhecido" }), { status: 500 });
   }
 }

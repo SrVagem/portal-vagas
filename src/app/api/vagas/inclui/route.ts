@@ -1,23 +1,20 @@
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-
-    const r = await fetch('https://n8n.uninova.ai/webhook/uninova-inclui-vaga', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
+    const body = await req.json().catch(() => ({}));
+    const upstream = await fetch("https://n8n.uninova.ai/webhook/uninova-insere-vagas", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-      keepalive: true,
     });
-
-    const data = await r.json().catch(() => ({}));
-    return new Response(JSON.stringify(data), {
-      status: r.status,
-      headers: { 'content-type': 'application/json' },
+    const text = await upstream.text();
+    return new Response(text || "{}", {
+      status: upstream.status,
+      headers: { "content-type": "application/json" },
     });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Erro desconhecido';
-    return new Response(JSON.stringify({ error: message }), { status: 500 });
+  } catch (e: any) {
+    console.error("[API inclui] erro:", e?.message || e);
+    return new Response(JSON.stringify({ error: e?.message || "Erro desconhecido" }), { status: 500 });
   }
 }
