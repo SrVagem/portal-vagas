@@ -24,7 +24,7 @@ import ClientLayout from "@/components/client-layout";
 import VagaModal from "@/components/vaga-modal";
 
 import {
-  listaVagas,
+  consultaVagas,
   criaVaga,
   alteraVaga,
   inativaVaga,
@@ -79,7 +79,7 @@ export default function VagasPage() {
   const load = async () => {
     try {
       setLoading(true);
-      const rows = await listaVagas();
+      const rows = await consultaVagas();
       // mapeia cada item para o formato da UI
       setData((rows ?? []).map(mapFromApi));
     } catch (e: any) {
