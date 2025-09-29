@@ -11,7 +11,22 @@ import { ThemeModeProvider } from "@/providers/theme-provider";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        <meta name="color-scheme" content="dark light" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+            (function () {
+              try {
+                var saved = localStorage.getItem('theme-mode');
+                var dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+                document.documentElement.classList.toggle('dark', dark);
+              } catch (e) {}
+            })();`,
+                      }}
+        />
+      </head>
       <body className="min-h-screen antialiased">
         <AntdCompat />
 
