@@ -3,17 +3,9 @@
 import { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Layout,
-  Menu,
-  Typography,
-  App,
-  theme as antdTheme,
-} from "antd";
-import {
-  HomeOutlined,
-  TableOutlined,
-} from "@ant-design/icons";
+import { Layout, Menu, Typography, App, theme as antdTheme } from "antd";
+import { HomeOutlined, TableOutlined } from "@ant-design/icons";
+import { useThemeMode } from "@/providers/theme-provider";
 
 const { Sider, Header, Content } = Layout;
 
@@ -26,38 +18,41 @@ export default function ClientLayout({
 }) {
   const pathname = usePathname();
   const selectedKey = pathname.startsWith("/vagas") ? "/vagas" : "/";
-
   const items = [
     { key: "/", icon: <HomeOutlined />, label: <Link href="/">Início</Link> },
     { key: "/vagas", icon: <TableOutlined />, label: <Link href="/vagas">Vagas</Link> },
   ];
 
   const { token } = antdTheme.useToken();
+  const { mode } = useThemeMode();
+  const isDark = mode === "dark";
 
   return (
     <Layout style={{ minHeight: "100dvh", background: token.colorBgLayout }}>
       {/* Sidebar fixa */}
       <Sider
         width={220}
-        theme="dark"
+        theme={isDark ? "dark" : "light"} // ✅ respeita o tema
         style={{
           position: "sticky",
           top: 0,
           height: "100dvh",
+          borderRight: `1px solid ${token.colorBorderSecondary}`,
         }}
       >
         <div
           style={{
             padding: 16,
-            color: "#fff",
+            color: token.colorText,
             fontWeight: 700,
             fontSize: 18,
           }}
         >
           Portal Vagas
         </div>
+
         <Menu
-          theme="dark"
+          theme={isDark ? "dark" : "light"} // ✅ respeita o tema
           mode="inline"
           selectedKeys={[selectedKey]}
           items={items}
@@ -75,7 +70,10 @@ export default function ClientLayout({
           }}
         >
           {title && (
-            <Typography.Title level={2} style={{ margin: 0 }}>
+            <Typography.Title
+              level={2}
+              style={{ margin: 0, color: token.colorText }}
+            >
               {title}
             </Typography.Title>
           )}
