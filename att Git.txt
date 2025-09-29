@@ -1,2 +1,4 @@
-
-git push -u origin main
+git status
+git add .
+git commit -m "fix: unificação de tipo Vaga e correção do page.tsx"
+git push origin main

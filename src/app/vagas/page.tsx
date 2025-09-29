@@ -167,7 +167,7 @@ export default function VagasPage() {
             onConfirm={async () => {
               try {
                 setLoading(true);
-                await inativaVaga({ id: record.id });
+                await inativaVaga(record.id);
                 message.success(`Vaga #${record.id} inativada`);
                 await load();
               } catch (e: any) {
