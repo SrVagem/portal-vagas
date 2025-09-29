@@ -17,6 +17,12 @@ export function useThemeMode(): ThemeCtx {
 export function ThemeModeProvider({ children, defaultMode = "light" as ThemeMode }: { children: React.ReactNode; defaultMode?: ThemeMode }) {
   const [mode, setMode] = useState<ThemeMode>(defaultMode);
 
+  // Detecta se o <html> está com a classe "dark" (ex.: via tailwind/next-themes)
+  const isDark =
+  typeof window !== "undefined"
+    ? document.documentElement.classList.contains("dark")
+    : false;
+
   useEffect(() => {
     try {
       const saved = localStorage.getItem("theme-mode") as ThemeMode | null;
