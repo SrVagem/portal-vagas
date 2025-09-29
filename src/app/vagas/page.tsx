@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ColumnsType } from "antd/es/table";
+import { Vaga } from "@/types/vaga";
 import {
   Table,
   Card,
@@ -31,32 +33,40 @@ import {
   type VagaAPI,
 } from "@/lib/vagas-api";
 
-// -------------------- Tipos locais --------------------
-type Vaga = VagaAPI & {
-  id: number | string; // garantir id obrigatório na UI
+// ---------- helpers ----------
+const toNumber = (v: unknown): number => {
+  if (typeof v === "number") return v;
+  if (typeof v === "string") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  // fallback seguro se a API não mandar id válido
+  return Date.now();
 };
 
-// -------------------- Utils --------------------
 const norm = (s: string) =>
   s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-// Map opcional (caso o JSON do n8n venha com chaves diferentes)
+// ✅ ÚNICO mapFromApi (normaliza id -> number)
 const mapFromApi = (row: any): Vaga => ({
-  id: row.id ?? row.ID ?? row.codigo ?? crypto.randomUUID(),
+  id: toNumber(row.id ?? row.ID ?? row.codigo),
   titulo: row.titulo ?? row.nome ?? row.title ?? "",
   status:
     (row.status as Vaga["status"]) ??
     (row.situacao as Vaga["status"]) ??
     "ABERTA",
-  responsavel: row.responsavel ?? row.owner ?? "",
-  local: row.local ?? row.cidade ?? "",
-  contrato: row.contrato ?? row.tipo ?? "",
-  salario: row.salario ?? row.valor ?? "",
-  abertura: row.abertura ?? row.dataAbertura ?? "",
-  fechamento: row.fechamento ?? row.dataFechamento ?? "",
+  responsavel: row.responsavel ?? row.hr ?? row.owner,
+  local: row.local ?? row.local_trabalho ?? row.cidade ?? row.uf,
+  contrato: row.contrato ?? row.tipo_contrato ?? row.vinculo,
+  salario: row.salario ? String(row.salario) : undefined,
+  abertura: row.abertura,
+  fechamento: row.fechamento,
+  descricao: row.descricao,
+  requisitos: row.requisitos,
+  beneficios: row.beneficios,
 });
 
-// -------------------- Página --------------------
+// ---------- página ----------
 export default function VagasPage() {
   const { message } = App.useApp();
 
@@ -75,12 +85,11 @@ export default function VagasPage() {
     initial: Vaga | null;
   }>({ open: false, mode: null, initial: null });
 
-  // -------- Carregar lista da API --------
+  // Carregar lista da API
   const load = async () => {
     try {
       setLoading(true);
       const rows = await consultaVagas();
-      // mapeia cada item para o formato da UI
       setData((rows ?? []).map(mapFromApi));
     } catch (e: any) {
       message.error(`Erro ao listar vagas: ${e?.message ?? e}`);
@@ -94,7 +103,7 @@ export default function VagasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // -------- Filtro local --------
+  // Filtro local
   const dataFiltered = useMemo(() => {
     let out = [...data];
     if (status !== "todos") out = out.filter((v) => v.status === status);
@@ -115,14 +124,14 @@ export default function VagasPage() {
     return out;
   }, [data, status, busca]);
 
-  // -------- Ações --------
+  // Ações
   const openCriar = () => setModal({ open: true, mode: "create", initial: null });
   const openEditar = (record: Vaga) =>
     setModal({ open: true, mode: "edit", initial: record });
   const closeModal = () => setModal({ open: false, mode: null, initial: null });
 
-  // -------- Colunas --------
-  const columns = [
+  // Colunas
+  const columns: ColumnsType<Vaga> = [
     { title: "ID", dataIndex: "id", key: "id", width: 80 },
     { title: "Título", dataIndex: "titulo", key: "titulo" },
     {
@@ -145,7 +154,7 @@ export default function VagasPage() {
     {
       title: "Ações",
       key: "acoes",
-      fixed: "right" as const,
+      fixed: "right",
       width: 120,
       render: (_: any, record: Vaga) => (
         <Space>
@@ -215,7 +224,7 @@ export default function VagasPage() {
           loading={loading}
           pagination={{ pageSize: 10 }}
           scroll={{ x: 1200 }}
-          size="small" // linhas mais finas
+          size="small"
         />
         {dataFiltered.length === 0 && !loading && (
           <Typography.Text type="secondary">
@@ -225,10 +234,10 @@ export default function VagasPage() {
       </Card>
 
       {/* Modal de criar/editar */}
-      {modal.open && (
+      {modal.open && modal.mode !== null && (
         <VagaModal
           open={modal.open}
-          mode={modal.mode!}
+          mode={modal.mode}
           initial={modal.initial}
           onClose={closeModal}
           onSubmit={async (vagaForm) => {

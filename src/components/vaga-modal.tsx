@@ -2,18 +2,8 @@
 
 import { useEffect } from "react";
 import { Modal, Form, Input, Select, App } from "antd";
+import { Vaga } from "@/types/vaga";
 
-export type Vaga = {
-  id: number;
-  titulo: string;
-  status: "ABERTA" | "FECHADA";
-  responsavel?: string;
-  local?: string;
-  contrato?: string;
-  salario?: string;
-  abertura?: string;
-  fechamento?: string;
-};
 
 type Props = {
   open: boolean;
