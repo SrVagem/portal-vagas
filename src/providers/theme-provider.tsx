@@ -73,10 +73,21 @@ export function ThemeModeProvider({
     }
   }, [mode]);
 
-  const toggle = useCallback(
-    () => setMode((m) => (m === "dark" ? "light" : "dark")),
-    []
-  );
+  const toggle = useCallback(() => {
+    const next: ThemeMode = mode === "dark" ? "light" : "dark";
+    setMode(next);
+  
+    // aplica imediatamente no DOM e persiste
+    try {
+      if (typeof document !== "undefined") {
+        document.documentElement.classList.toggle("dark", next === "dark");
+      }
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("theme-mode", next);
+      }
+    } catch {}
+  }, [mode]);
+  
 
   const algorithm: ThemeConfig["algorithm"] = useMemo(
     () => (mode === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm),
@@ -146,11 +157,12 @@ export function ThemeModeProvider({
 
   return (
     <ThemeModeContext.Provider value={{ mode, setMode, toggle }}>
-      <ConfigProvider theme={themeConfig}>
+      <ConfigProvider key={mode} theme={themeConfig}>
         <AntdApp>{children}</AntdApp>
       </ConfigProvider>
     </ThemeModeContext.Provider>
   );
+  
 }
 
 /**

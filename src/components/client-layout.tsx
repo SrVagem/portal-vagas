@@ -32,12 +32,13 @@ export default function ClientLayout({
       {/* Sidebar fixa */}
       <Sider
         width={220}
-        theme={isDark ? "dark" : "light"} // ✅ respeita o tema
+        theme={isDark ? "dark" : "light"}
         style={{
           position: "sticky",
           top: 0,
           height: "100dvh",
           borderRight: `1px solid ${token.colorBorderSecondary}`,
+          background: token.colorBgContainer, // ✅ usa token dinâmico
         }}
       >
         <div
@@ -52,11 +53,14 @@ export default function ClientLayout({
         </div>
 
         <Menu
-          theme={isDark ? "dark" : "light"} // ✅ respeita o tema
           mode="inline"
           selectedKeys={[selectedKey]}
           items={items}
-          style={{ borderInlineEnd: 0 }}
+          style={{
+            borderInlineEnd: 0,
+            background: token.colorBgContainer, // ✅ corrige fundo do Menu
+            color: token.colorText, // ✅ corrige cor dos itens
+          }}
         />
       </Sider>
 

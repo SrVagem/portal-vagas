@@ -86,7 +86,8 @@ html.dark {
 /* ====== Tipografia base ====== */
 body {
   color: var(--gcs-fg);
-  background: transparent;
+  background: var(--gcs-bg); /* não usar transparent */
+  transition: background-color .2s ease, color .2s ease;
 }
 
 /* ====== Labels ====== */
