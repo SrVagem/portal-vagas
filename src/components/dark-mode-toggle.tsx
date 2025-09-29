@@ -6,13 +6,25 @@ import { useThemeMode } from "@/providers/theme-provider";
 
 export default function DarkModeToggle() {
   const { mode, toggle } = useThemeMode();
+  const isDark = mode === "dark";
 
   return (
-    <Tooltip title={mode === "dark" ? "Alternar para claro" : "Alternar para escuro"}>
+    <Tooltip title={isDark ? "Alternar para claro" : "Alternar para escuro"} mouseEnterDelay={0.15}>
       <Button
-        shape="circle"
+        aria-label="Alternar tema"
         onClick={toggle}
-        icon={mode === "dark" ? <SunOutlined /> : <MoonOutlined />}
+        type="text"
+        shape="circle"
+        size="large"
+        icon={isDark ? <SunOutlined /> : <MoonOutlined />}
+        style={{
+          width: 36,
+          height: 36,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: 999,
+        }}
       />
     </Tooltip>
   );
