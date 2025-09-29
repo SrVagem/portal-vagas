@@ -83,11 +83,8 @@ html.dark {
 }
 
 /* ====== Tipografia base ====== */
-body {
-  color: var(--gcs-fg);
-  background: var(--gcs-bg); /* não usar transparent */
-  transition: background-color .2s ease, color .2s ease;
-}
+body { color: var(--gcs-fg); background: var(--gcs-bg); transition: background-color .2s, color .2s; }
+
 
 /* ====== Labels ====== */
 .modal-label {
