@@ -1,9 +1,18 @@
 "use client";
 
 import { useEffect } from "react";
-import { Modal, Form, Input, Select, App } from "antd";
+import {
+  Modal,
+  Form,
+  Input,
+  Select,
+  Row,
+  Col,
+  App,
+  Tag,
+  Space,
+} from "antd";
 import { Vaga } from "@/types/vaga";
-
 
 type Props = {
   open: boolean;
@@ -23,84 +32,139 @@ export default function VagaModal({
   const [form] = Form.useForm<Vaga>();
   const { message } = App.useApp();
 
-  // Repopula o form sempre que abrir ou trocar a vaga
   useEffect(() => {
-    if (open) {
-      form.resetFields();
-      if (initial) {
-        form.setFieldsValue(initial);
-      }
-    }
+    if (!open) return;
+    form.resetFields();
+    if (initial) form.setFieldsValue(initial);
   }, [open, initial, form]);
 
   const handleOk = async () => {
-    const values = await form.validateFields();
-    const payload: Vaga = {
-      ...(initial ?? { id: Date.now() }), // se for create, gera um id
-      ...values,
-    };
-    onSubmit(payload);
+    try {
+      const values = await form.validateFields();
+      const payload: Vaga = {
+        ...(initial ?? { id: Date.now() }), // gera id para criação
+        ...values,
+      };
+      onSubmit(payload);
+    } catch {
+      // validação já mostra mensagens
+    }
   };
+
+  const titleNode = (
+    <Space size={8} align="center">
+      <span>{mode === "create" ? "Nova Vaga" : "Editar Vaga"}</span>
+      {initial?.id != null && <Tag color="blue">#{initial.id}</Tag>}
+    </Space>
+  );
 
   return (
     <Modal
       open={open}
-      title={mode === "create" ? "Nova Vaga" : "Editar Vaga"}
+      title={titleNode}
       onCancel={onClose}
       onOk={handleOk}
       okText={mode === "create" ? "Criar" : "Salvar"}
+      width={820}            // mais espaço para as 2 colunas
+      destroyOnClose
       maskClosable={false}
-      destroyOnHidden={false}
     >
-      <Form
-        layout="vertical"
-        form={form}
-        preserve={false} // importante para não reter valores antigos
-      >
-        <Form.Item
-          name="titulo"
-          label="Título"
-          rules={[{ required: true, message: "Informe o título" }]}
-        >
-          <Input placeholder="Ex.: Desenvolvedor Full Stack Jr" />
+      <Form form={form} layout="vertical">
+        {/* Mantém o id no form (oculto) só pra edição */}
+        <Form.Item name="id" hidden>
+          <Input />
         </Form.Item>
 
-        <Form.Item
-          name="status"
-          label="Status"
-          rules={[{ required: true, message: "Informe o status" }]}
-        >
-          <Select
-            options={[
-              { value: "ABERTA", label: "Aberta" },
-              { value: "FECHADA", label: "Fechada" },
-            ]}
-          />
-        </Form.Item>
+        <Row gutter={[16, 12]}>
+          <Col span={24}>
+            <Form.Item
+              label="Título"
+              name="titulo"
+              rules={[{ required: true, message: "Informe o título" }]}
+            >
+              <Input placeholder="Ex: Desenvolvedor(a) Full Stack Jr" />
+            </Form.Item>
+          </Col>
 
-        <Form.Item name="responsavel" label="Responsável">
-          <Input placeholder="Ex.: RH Tecnologia" />
-        </Form.Item>
+          <Col xs={24} md={12}>
+            <Form.Item
+              label="Status"
+              name="status"
+              rules={[{ required: true, message: "Selecione o status" }]}
+            >
+              <Select
+                placeholder="Selecione..."
+                options={[
+                  { value: "ABERTA", label: "Aberta" },
+                  { value: "FECHADA", label: "Fechada" },
+                ]}
+              />
+            </Form.Item>
+          </Col>
 
-        <Form.Item name="local" label="Local">
-          <Input placeholder="Ex.: São Paulo - SP (Híbrido)" />
-        </Form.Item>
+          <Col xs={24} md={12}>
+            <Form.Item label="Responsável" name="responsavel">
+              <Input placeholder="Ex: RH Tecnologia" />
+            </Form.Item>
+          </Col>
 
-        <Form.Item name="contrato" label="Contrato">
-          <Input placeholder="Ex.: CLT / PJ / Estágio" />
-        </Form.Item>
+          <Col xs={24} md={12}>
+            <Form.Item label="Local" name="local">
+              <Input placeholder="Ex: São Paulo - SP (Híbrido)" />
+            </Form.Item>
+          </Col>
 
-        <Form.Item name="salario" label="Salário">
-          <Input placeholder="Ex.: R$ 4.500,00" />
-        </Form.Item>
+          <Col xs={24} md={12}>
+            <Form.Item label="Contrato" name="contrato">
+              <Select
+                allowClear
+                placeholder="Selecione..."
+                options={[
+                  { value: "CLT", label: "CLT" },
+                  { value: "PJ", label: "PJ" },
+                  { value: "Estágio", label: "Estágio" },
+                  { value: "Temporário", label: "Temporário" },
+                ]}
+              />
+            </Form.Item>
+          </Col>
 
-        <Form.Item name="abertura" label="Abertura">
-          <Input placeholder="Ex.: 15/09/2025 13:29" />
-        </Form.Item>
+          <Col xs={24} md={12}>
+            <Form.Item label="Salário" name="salario">
+              <Input placeholder="Ex: 4500" />
+            </Form.Item>
+          </Col>
 
-        <Form.Item name="fechamento" label="Fechamento">
-          <Input placeholder="Opcional" />
-        </Form.Item>
+          <Col xs={24} md={12}>
+            <Form.Item label="Abertura" name="abertura">
+              <Input placeholder="Ex: 2025-09-15" />
+            </Form.Item>
+          </Col>
+
+          <Col xs={24} md={12}>
+            <Form.Item label="Fechamento" name="fechamento">
+              <Input placeholder="Opcional" />
+            </Form.Item>
+          </Col>
+
+          <Col span={24}>
+            <Form.Item label="Descrição" name="descricao">
+              <Input.TextArea rows={4} placeholder="Resumo da vaga..." />
+            </Form.Item>
+          </Col>
+
+          <Col span={24}>
+            <Form.Item label="Requisitos" name="requisitos">
+              <Input.TextArea rows={4} placeholder="Tecnologias, experiências, etc." />
+            </Form.Item>
+          </Col>
+
+          <Col span={24}>
+            <Form.Item label="Benefícios" name="beneficios">
+              <Input.TextArea rows={3} placeholder="Plano de saúde, VR/VA, etc." />
+            </Form.Item>
+          </Col>
+        </Row>
       </Form>
     </Modal>
   );
