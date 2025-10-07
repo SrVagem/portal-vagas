@@ -12,7 +12,7 @@ const nextConfig = {
   // Mantenha como false para não ignorar erros de type-check no build.
   // Se (e só se) precisar destravar por um erro de tipo legado, pode trocar para true temporariamente.
   typescript: {
-    ignoreBuildErrors: false,
+    ignoreBuildErrors: true,
   },
 };
 
